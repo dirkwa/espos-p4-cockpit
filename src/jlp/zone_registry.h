@@ -6,6 +6,8 @@
 #include <vector>
 
 #include <ArduinoJson.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 namespace jlp {
 
@@ -55,8 +57,26 @@ class ZoneRegistry {
   void apply_meta(const std::string& path, const JsonObjectConst& meta);
 
  private:
+  // WS-task → event_loop hand-off, same pattern as
+  // NotificationsRegistry. The on_meta callback appends to pending_
+  // under pending_mutex_; a 50 ms event_loop timer drains the whole
+  // batch. With sendMeta=all, SK re-broadcasts meta for every known
+  // path on (re)connect / after a layout push — dozens at once on a
+  // real boat. The old per-delta onDelay(0) flooded event_loop's
+  // queue with that burst and could stall a concurrent layout apply
+  // past its 25 s budget (and trip the event_loop watchdog).
+  struct PendingMeta {
+    std::string path;
+    JsonDocument doc;
+  };
+  void drain_pending();
+
   std::unordered_map<std::string, std::vector<Zone>> map_;
   std::unordered_map<std::string, std::string> descriptions_;
+
+  std::vector<PendingMeta> pending_;
+  StaticSemaphore_t pending_mutex_buffer_{};
+  SemaphoreHandle_t pending_mutex_ = nullptr;
 };
 
 ZoneRegistry& zones();

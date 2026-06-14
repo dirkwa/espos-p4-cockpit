@@ -82,7 +82,6 @@ void ZoneRegistry::apply_meta(const std::string& path,
   const char* desc = meta["description"] | (const char*)nullptr;
   if (desc && *desc) {
     descriptions_[path] = desc;
-    ESP_LOGI(TAG, "%s: description=\"%s\"", path.c_str(), desc);
     changed = true;
   }
   JsonArrayConst zarr = meta["zones"];
@@ -100,10 +99,12 @@ void ZoneRegistry::apply_meta(const std::string& path,
                     parse_state(z["state"] | "normal")});
     }
     map_[path] = std::move(zs);
-    ESP_LOGI(TAG, "%s: %u zones loaded from WS meta", path.c_str(),
-             (unsigned)map_[path].size());
     changed = true;
   }
+  // No per-path logging here — apply_meta runs in a batch of dozens
+  // right after every layout push (sendMeta=all rebroadcast), and the
+  // remote-log TCP write per line was itself a meaningful chunk of the
+  // event_loop stall this batching is meant to cure.
   if (!changed) return;
   // Notify the bound subject so widget observers re-fire and pick
   // up the just-loaded description / zones. The observer reads
@@ -129,10 +130,17 @@ const std::string& ZoneRegistry::description(const std::string& path) const {
   return it == descriptions_.end() ? empty : it->second;
 }
 
+void ZoneRegistry::drain_pending() {
+  std::vector<PendingMeta> batch;
+  if (xSemaphoreTake(pending_mutex_, 0) != pdTRUE) return;  // WS appending
+  batch.swap(pending_);
+  xSemaphoreGive(pending_mutex_);
+  for (auto& p : batch) {
+    apply_meta(p.path, p.doc.as<JsonObjectConst>());
+  }
+}
+
 void ZoneRegistry::hook_sk_ws() {
-  // The WS callback fires on the WS task — marshal registry writes
-  // onto event_loop so reads from match() on the main task are
-  // race-free.
   auto app = sensesp::SensESPApp::get();
   if (!app) {
     ESP_LOGW(TAG, "no SensESPApp yet — hook_sk_ws() must be called after the builder");
@@ -143,18 +151,30 @@ void ZoneRegistry::hook_sk_ws() {
     ESP_LOGW(TAG, "no WS client yet — hook_sk_ws skipped");
     return;
   }
-  if (!ws) return;
+
+  // Static mutex so we don't need a destructor / leak a heap one.
+  pending_mutex_ = xSemaphoreCreateMutexStatic(&pending_mutex_buffer_);
+
+  // WS task: snapshot the meta and append to the pending buffer.
+  // NO per-delta onDelay — see the header comment on the firehose
+  // that flooded event_loop after a layout push.
   ws->on_meta([](const String& path, const JsonObject& meta) {
-    // Copy out before the WS task moves on. ArduinoJson v7
-    // JsonObjects are views into the parent doc; we need to snapshot.
-    std::string path_owned(path.c_str());
-    JsonDocument doc;
-    doc.set(meta);
-    sensesp::event_loop()->onDelay(0, [path_owned, doc = std::move(doc)]() {
-      zones().apply_meta(path_owned, doc.as<JsonObjectConst>());
-    });
+    PendingMeta entry;
+    entry.path.assign(path.c_str());
+    entry.doc.set(meta);
+    auto& reg = zones();
+    if (!reg.pending_mutex_) return;  // hook_sk_ws not finished yet
+    if (xSemaphoreTake(reg.pending_mutex_, pdMS_TO_TICKS(10)) == pdTRUE) {
+      reg.pending_.push_back(std::move(entry));
+      xSemaphoreGive(reg.pending_mutex_);
+    }
   });
-  ESP_LOGI(TAG, "subscribed to SK WS meta callback");
+
+  // event_loop drains the buffer at 50 ms cadence. Bounded queue
+  // pressure regardless of how many meta deltas SK floods at once.
+  sensesp::event_loop()->onRepeat(50, []() { zones().drain_pending(); });
+
+  ESP_LOGI(TAG, "subscribed to SK WS meta callback (batched)");
 }
 
 ZoneRegistry& zones() {
