@@ -473,7 +473,12 @@ lv_obj_t* make_local_toggle(BuildCtx& ctx, JsonObjectConst spec,
 // disabled via voice().set_speaker_muted; no SK path.
 lv_obj_t* build_mute_speaker(BuildCtx& ctx, JsonObjectConst spec,
                              std::string* err) {
-  (void)err;
+  // One per layout: each switch snapshots voice().speaker_muted() at build
+  // time, so a second would drift out of sync (like @audio_mute).
+  if (!ctx.live_paths.insert("@mute_speaker").second) {
+    *err = "mute_speaker: only one per layout";
+    return nullptr;
+  }
   lv_obj_t* root =
       make_local_toggle(ctx, spec, "SPEAKER", voice().speaker_muted());
   lv_obj_t* sw = static_cast<lv_obj_t*>(lv_obj_get_user_data(root));
@@ -491,7 +496,12 @@ lv_obj_t* build_mute_speaker(BuildCtx& ctx, JsonObjectConst spec,
 // push-to-talk and (future) always-on listening via voice().set_mic_muted.
 lv_obj_t* build_mute_mic(BuildCtx& ctx, JsonObjectConst spec,
                          std::string* err) {
-  (void)err;
+  // One per layout: the switch snapshots voice().mic_muted() at build time,
+  // so a second would drift out of sync (like @audio_mute).
+  if (!ctx.live_paths.insert("@mute_mic").second) {
+    *err = "mute_mic: only one per layout";
+    return nullptr;
+  }
   lv_obj_t* root = make_local_toggle(ctx, spec, "MIC", voice().mic_muted());
   lv_obj_t* sw = static_cast<lv_obj_t*>(lv_obj_get_user_data(root));
   lv_obj_add_event_cb(
@@ -2411,6 +2421,9 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_event_t* e) {
         auto* c = static_cast<VoiceCtx*>(lv_obj_get_user_data(
             static_cast<lv_obj_t*>(lv_event_get_target(e))));
+        // If the widget is torn down mid-hold (a layout swap during a press),
+        // no RELEASED/PRESS_LOST fires — clear PTT so it doesn't stay stuck.
+        voice().set_ptt_held(false);
         if (c->timer) lv_timer_delete(c->timer);
         delete c;
       },
