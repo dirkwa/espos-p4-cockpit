@@ -23,6 +23,7 @@
 #include "../layout/layout_manager.h"
 #include "../layout/store.h"
 #include "../audio/chime.h"
+#include "../audio/voice_control.h"
 
 static const char* TAG = "jlp.http";
 
@@ -135,6 +136,52 @@ esp_err_t beep_get(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_sendstr(req, ready ? "{\"ok\":true,\"audio\":\"ready\"}"
                                 : "{\"ok\":false,\"audio\":\"not-ready\"}");
+  return ESP_OK;
+}
+
+// GET /mic_probe — dump the last ~2 s of captured mic PCM (exactly what the
+// wake loop streams to the detector) as a 16 kHz mono WAV. A diagnostic for
+// "wake never fires": lets the audio the detector sees be inspected off-panel.
+esp_err_t mic_probe_get(httpd_req_t* req) {
+  if (!g_wyoming || !g_wyoming->wake_enabled()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_sendstr(req, "wake not enabled");
+    return ESP_OK;
+  }
+  const size_t max_samples = 32000;  // 2 s @ 16 kHz
+  auto* pcm = static_cast<int16_t*>(malloc(max_samples * sizeof(int16_t)));
+  if (!pcm) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_sendstr(req, "oom");
+    return ESP_OK;
+  }
+  size_t n = g_wyoming->wake_pcm_snapshot(pcm, max_samples);
+  const uint32_t rate = 16000;
+  const uint32_t data_bytes = (uint32_t)(n * sizeof(int16_t));
+  uint8_t hdr[44];
+  const uint32_t riff = 36 + data_bytes;
+  memcpy(hdr, "RIFF", 4);
+  hdr[4] = riff & 0xff; hdr[5] = (riff >> 8) & 0xff;
+  hdr[6] = (riff >> 16) & 0xff; hdr[7] = (riff >> 24) & 0xff;
+  memcpy(hdr + 8, "WAVEfmt ", 8);
+  hdr[16] = 16; hdr[17] = 0; hdr[18] = 0; hdr[19] = 0;   // fmt size
+  hdr[20] = 1; hdr[21] = 0;                              // PCM
+  hdr[22] = 1; hdr[23] = 0;                              // mono
+  hdr[24] = rate & 0xff; hdr[25] = (rate >> 8) & 0xff;
+  hdr[26] = (rate >> 16) & 0xff; hdr[27] = (rate >> 24) & 0xff;
+  const uint32_t byte_rate = rate * 2;
+  hdr[28] = byte_rate & 0xff; hdr[29] = (byte_rate >> 8) & 0xff;
+  hdr[30] = (byte_rate >> 16) & 0xff; hdr[31] = (byte_rate >> 24) & 0xff;
+  hdr[32] = 2; hdr[33] = 0;                              // block align
+  hdr[34] = 16; hdr[35] = 0;                             // bits
+  memcpy(hdr + 36, "data", 4);
+  hdr[40] = data_bytes & 0xff; hdr[41] = (data_bytes >> 8) & 0xff;
+  hdr[42] = (data_bytes >> 16) & 0xff; hdr[43] = (data_bytes >> 24) & 0xff;
+  httpd_resp_set_type(req, "audio/wav");
+  httpd_resp_send_chunk(req, (const char*)hdr, sizeof(hdr));
+  httpd_resp_send_chunk(req, (const char*)pcm, data_bytes);
+  httpd_resp_send_chunk(req, nullptr, 0);
+  free(pcm);
   return ESP_OK;
 }
 
@@ -493,6 +540,17 @@ esp_err_t hello_get(httpd_req_t* req) {
   resp["audio"] = chime().audio_ready() ? "ready" : "unavailable";
   if (g_wyoming && g_wyoming->running()) {
     resp["voice"] = g_wyoming->client_connected() ? "connected" : "listening";
+    if (g_wyoming->wake_enabled()) {
+      // Wake diagnostics: `chunks` should climb while idle+unmuted (proves the
+      // mic is streaming to the detector). `mic_muted` gates it.
+      JsonObject w = resp["wake"].to<JsonObject>();
+      w["connected"] = g_wyoming->wake_connected();
+      w["capturing"] = g_wyoming->wake_capturing();
+      w["mic_muted"] = voice().mic_muted();
+      w["chunks"] = g_wyoming->wake_chunks();
+      w["detections"] = g_wyoming->wake_detections();
+      w["peak"] = g_wyoming->wake_peak();
+    }
   } else {
     resp["voice"] = "unavailable";
   }
@@ -512,7 +570,7 @@ void http_api_start(uint16_t port) {
   config.recv_wait_timeout = 120;
   config.send_wait_timeout = 30;
   config.lru_purge_enable = true;
-  config.max_uri_handlers = 5;
+  config.max_uri_handlers = 6;
 
   httpd_handle_t server = nullptr;
   if (httpd_start(&server, &config) != ESP_OK) {
@@ -559,6 +617,14 @@ void http_api_start(uint16_t port) {
       .user_ctx = nullptr,
   };
   httpd_register_uri_handler(server, &beep_uri);
+
+  httpd_uri_t mic_probe_uri = {
+      .uri = "/mic_probe",
+      .method = HTTP_GET,
+      .handler = mic_probe_get,
+      .user_ctx = nullptr,
+  };
+  httpd_register_uri_handler(server, &mic_probe_uri);
 
   ESP_LOGI(
       TAG,
