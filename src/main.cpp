@@ -102,7 +102,8 @@ void setup() {
   // still works too.
   sensesp_wyoming::WyomingSatelliteConfig wy_cfg;
   wy_cfg.on_device_wake = true;
-  wy_cfg.wake_input_gain = 4;  // MIC1 reads ~2000 peak; lift toward WakeNet's range
+  wy_cfg.wake_input_gain = 3;   // lift the quiet MIC1 into WakeNet range (unclipped)
+  wy_cfg.wake_threshold = 0.45f;  // quiet mic -> bias toward sensitivity
   auto* wyoming_sat = new sensesp_wyoming::WyomingSatellite(audio, wy_cfg);
   // Privacy gate: the mic-mute switch suppresses wake streaming AND PTT.
   wyoming_sat->set_mic_muted_fn([] { return jlp::voice().mic_muted(); });
