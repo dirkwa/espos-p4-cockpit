@@ -436,6 +436,115 @@ lv_obj_t* build_audio_mute_toggle(BuildCtx& ctx, JsonObjectConst spec,
   return root;
 }
 
+namespace {
+// Shared chrome for a panel-local toggle tile (caption left, switch right,
+// no SK path). Returns the switch so the caller wires its VALUE_CHANGED.
+lv_obj_t* make_local_toggle(BuildCtx& ctx, JsonObjectConst spec,
+                            const char* default_caption, bool initial_on) {
+  const Colors colors = parse_colors(spec);
+  lv_obj_t* root = lv_obj_create(ctx.parent);
+  apply_geometry(root, spec);
+  lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
+  lv_obj_set_style_border_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
+  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+
+  const char* caption = spec["label"] | default_caption;
+  lv_obj_t* l = lv_label_create(root);
+  lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
+  lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+                             LV_PART_MAIN);
+  lv_label_set_text(l, caption);
+  lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
+
+  lv_obj_t* sw = lv_switch_create(root);
+  lv_obj_set_size(sw, 60, 30);
+  lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
+  if (initial_on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+  lv_obj_set_user_data(root, sw);  // let callers return root but reach sw
+  return root;
+}
+}  // namespace
+
+// `mute_speaker` — panel-local speaker/TTS mute (ON = muted). Holds the amp
+// disabled via voice().set_speaker_muted; no SK path.
+lv_obj_t* build_mute_speaker(BuildCtx& ctx, JsonObjectConst spec,
+                             std::string* err) {
+  (void)err;
+  lv_obj_t* root =
+      make_local_toggle(ctx, spec, "SPEAKER", voice().speaker_muted());
+  lv_obj_t* sw = static_cast<lv_obj_t*>(lv_obj_get_user_data(root));
+  lv_obj_add_event_cb(
+      sw,
+      [](lv_event_t* e) {
+        auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        voice().set_speaker_muted(lv_obj_has_state(w, LV_STATE_CHECKED));
+      },
+      LV_EVENT_VALUE_CHANGED, nullptr);
+  return root;
+}
+
+// `mute_mic` — panel-local mic mute / privacy switch (ON = muted). Suppresses
+// push-to-talk and (future) always-on listening via voice().set_mic_muted.
+lv_obj_t* build_mute_mic(BuildCtx& ctx, JsonObjectConst spec,
+                         std::string* err) {
+  (void)err;
+  lv_obj_t* root = make_local_toggle(ctx, spec, "MIC", voice().mic_muted());
+  lv_obj_t* sw = static_cast<lv_obj_t*>(lv_obj_get_user_data(root));
+  lv_obj_add_event_cb(
+      sw,
+      [](lv_event_t* e) {
+        auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        voice().set_mic_muted(lv_obj_has_state(w, LV_STATE_CHECKED));
+      },
+      LV_EVENT_VALUE_CHANGED, nullptr);
+  return root;
+}
+
+// `volume` — draggable speaker-volume slider (0-100), applied at the codec via
+// voice().set_volume. Panel-local; caption above the bar.
+lv_obj_t* build_volume(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
+  (void)err;
+  const Colors colors = parse_colors(spec);
+  lv_obj_t* root = lv_obj_create(ctx.parent);
+  apply_geometry(root, spec);
+  lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
+  lv_obj_set_style_border_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
+  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+
+  const char* caption = spec["label"] | "VOLUME";
+  lv_obj_t* l = lv_label_create(root);
+  lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
+  lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+                             LV_PART_MAIN);
+  lv_label_set_text(l, caption);
+  lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  lv_obj_t* sld = lv_slider_create(root);
+  lv_slider_set_range(sld, 0, 100);
+  lv_slider_set_value(sld, voice().volume(), LV_ANIM_OFF);
+  lv_obj_set_width(sld, LV_PCT(100));
+  lv_obj_align(sld, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_bg_color(sld, lv_color_hex(colors.fg), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(sld, lv_color_hex(colors.fg), LV_PART_KNOB);
+
+  lv_obj_add_event_cb(
+      sld,
+      [](lv_event_t* e) {
+        auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        voice().set_volume((uint8_t)lv_slider_get_value(w));
+      },
+      LV_EVENT_VALUE_CHANGED, nullptr);
+  return root;
+}
+
 lv_obj_t* build_toggle(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   const char* path = spec["bind"] | (const char*)nullptr;
   if (!path) { *err = "toggle: bind required"; return nullptr; }
@@ -2244,24 +2353,29 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   auto* vc = new VoiceCtx{root, lbl, nullptr, caption, colors.fg, -1};
   lv_obj_set_user_data(root, vc);
 
-  // Press → trigger PTT (only meaningful when idle/connected).
+  // Press-and-hold: hold the button to stream the mic, release to send. The
+  // held state is level-triggered (set true on press, false on release), so
+  // the exact ordering of LVGL press/release/press-lost events doesn't race —
+  // whatever the last event says wins. Snappier than tap-then-wait-for-silence.
   lv_obj_add_event_cb(
       root,
       [](lv_event_t* e) {
         lv_obj_set_style_bg_opa(
             static_cast<lv_obj_t*>(lv_event_get_target(e)), LV_OPA_70,
             LV_PART_MAIN);
-        voice().trigger_ptt();
+        voice().set_ptt_held(true);
       },
       LV_EVENT_PRESSED, nullptr);
-  lv_obj_add_event_cb(
-      root,
-      [](lv_event_t* e) {
-        lv_obj_set_style_bg_opa(
-            static_cast<lv_obj_t*>(lv_event_get_target(e)), LV_OPA_COVER,
-            LV_PART_MAIN);
-      },
-      LV_EVENT_RELEASED, nullptr);
+  // RELEASED (lift over the button) and PRESS_LOST (finger dragged off) both
+  // end the hold.
+  auto release_cb = [](lv_event_t* e) {
+    lv_obj_set_style_bg_opa(
+        static_cast<lv_obj_t*>(lv_event_get_target(e)), LV_OPA_COVER,
+        LV_PART_MAIN);
+    voice().set_ptt_held(false);
+  };
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_PRESS_LOST, nullptr);
 
   // Poll the satellite state ~4 Hz on the event_loop (LVGL) task and update
   // the caption/colour: LISTENING (green) while streaming mic, "…" when the
@@ -2321,6 +2435,9 @@ lv_obj_t* build_widget(BuildCtx& ctx, JsonObjectConst spec,
   if (t == "anchor")   return build_anchor(ctx, spec, err);
   if (t == "anchor_track") return build_anchor_track(ctx, spec, err);
   if (t == "voice")    return build_voice(ctx, spec, err);
+  if (t == "mute_speaker") return build_mute_speaker(ctx, spec, err);
+  if (t == "mute_mic")     return build_mute_mic(ctx, spec, err);
+  if (t == "volume")       return build_volume(ctx, spec, err);
   *err = std::string("unknown widget kind: ") + t;
   return nullptr;
 }

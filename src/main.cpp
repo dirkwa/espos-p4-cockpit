@@ -94,7 +94,7 @@ void setup() {
   // SensESPAppBuilder brings WiFi/lwIP online.
   auto* wyoming_sat = new sensesp_wyoming::WyomingSatellite(audio);
   jlp::http_api_set_wyoming(wyoming_sat);
-  jlp::voice().init(wyoming_sat);  // mic-button widget drives PTT through this
+  jlp::voice().init(wyoming_sat, audio);  // voice + audio-control widgets
 
   jlp::overlay().init();
   jlp::overlay().set_hostname("p4-cockpit");
