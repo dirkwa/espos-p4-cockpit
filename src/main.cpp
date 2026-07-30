@@ -92,7 +92,17 @@ void setup() {
   // START it only after the network stack is up (see below) — its TCP
   // server calls socket()/bind(), which assert against lwIP if run before
   // SensESPAppBuilder brings WiFi/lwIP online.
-  auto* wyoming_sat = new sensesp_wyoming::WyomingSatellite(audio);
+  // Hands-free wake word: stream the mic to the wake service (openWakeWord
+  // on the SK server host, :10400) and run a pipeline on `detection`. The
+  // wake host must be a dotted-quad IP (the wake task doesn't resolve names);
+  // kSkHost is that IP for this boat. Leave wake_host empty to disable and
+  // fall back to the tap-to-talk voice widget only.
+  sensesp_wyoming::WyomingSatelliteConfig wy_cfg;
+  wy_cfg.wake_host = kSkHost;
+  wy_cfg.wake_words = {"hey_jarvis"};  // built-in until a "hey_moin" model
+  auto* wyoming_sat = new sensesp_wyoming::WyomingSatellite(audio, wy_cfg);
+  // Privacy gate: the mic-mute switch suppresses wake streaming AND PTT.
+  wyoming_sat->set_mic_muted_fn([] { return jlp::voice().mic_muted(); });
   jlp::http_api_set_wyoming(wyoming_sat);
   jlp::voice().init(wyoming_sat, audio);  // voice + audio-control widgets
 
