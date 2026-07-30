@@ -15,5 +15,14 @@ otadata,   data, ota,     0xe000,   0x2000,
 app0,      app,  ota_0,   0x10000,  0x680000,
 app1,      app,  ota_1,   0x690000, 0x680000,
 layout,    data, nvs,     0xD10000, 0x20000,
-spiffs,    data, spiffs,  0xD30000, 0x1E0000,
+# The SPIFFS partition MUST come before "model": SensESP calls
+# SPIFFS.begin(true) with no label, which mounts the FIRST spiffs-subtype
+# partition and formats it on mount-failure. If "model" (a raw srmodels.bin,
+# not a SPIFFS image) were first, that format would wipe the wake model on
+# every boot. Keeping spiffs first makes SPIFFS grab spiffs, not the model.
+spiffs,    data, spiffs,  0xD30000, 0xE0000,
+# esp-sr WakeNet models (srmodels.bin). Named "model" (esp-sr's flash hook
+# targets that exact label) and given the "fat" subtype so SPIFFS.begin()
+# never picks it (esp_srmodel_init uses SUBTYPE_ANY, so it doesn't care).
+model,     data, fat,     0xE10000, 0x100000,
 coredump,  data, coredump,0xF10000, 0x40000,

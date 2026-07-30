@@ -541,9 +541,12 @@ esp_err_t hello_get(httpd_req_t* req) {
   if (g_wyoming && g_wyoming->running()) {
     resp["voice"] = g_wyoming->client_connected() ? "connected" : "listening";
     if (g_wyoming->wake_enabled()) {
-      // Wake diagnostics: `chunks` should climb while idle+unmuted (proves the
-      // mic is streaming to the detector). `mic_muted` gates it.
+      // Wake diagnostics. On-device: `word` names the loaded WakeNet model,
+      // `detections` climbs on each wake; `capturing` = the engine owns the
+      // mic. `mic_muted` gates it. (Network path adds `chunks`/`peak`.)
       JsonObject w = resp["wake"].to<JsonObject>();
+      w["on_device"] = g_wyoming->wake_on_device();
+      w["word"] = g_wyoming->wake_word();
       w["connected"] = g_wyoming->wake_connected();
       w["capturing"] = g_wyoming->wake_capturing();
       w["mic_muted"] = voice().mic_muted();

@@ -92,14 +92,17 @@ void setup() {
   // START it only after the network stack is up (see below) — its TCP
   // server calls socket()/bind(), which assert against lwIP if run before
   // SensESPAppBuilder brings WiFi/lwIP online.
-  // Hands-free wake word: stream the mic to the wake service (openWakeWord
-  // on the SK server host, :10400) and run a pipeline on `detection`. The
-  // wake host must be a dotted-quad IP (the wake task doesn't resolve names);
-  // kSkHost is that IP for this boat. Leave wake_host empty to disable and
-  // fall back to the tap-to-talk voice widget only.
+  // Hands-free wake word: ON-DEVICE (esp-sr AFE + WakeNet). The detector runs
+  // on the panel from the raw mic — its front-end is built for far-field
+  // embedded mics, unlike a remote openWakeWord (which scored this panel's mic
+  // near zero). The word is chosen in sdkconfig (CONFIG_SR_WN_WN9_HIESP ->
+  // "Hi ESP") and flashed to the "model" partition; no wake_host / network
+  // stream. This P4 rev links the esp32p4_less_v3 esp-sr lib, which supports
+  // the wn9 (v1h24) models like hiesp — NOT the newer wn9l Jarvis. Tap-to-talk
+  // still works too.
   sensesp_wyoming::WyomingSatelliteConfig wy_cfg;
-  wy_cfg.wake_host = kSkHost;
-  wy_cfg.wake_words = {"hey_jarvis"};  // built-in until a "hey_moin" model
+  wy_cfg.on_device_wake = true;
+  wy_cfg.wake_input_gain = 4;  // MIC1 reads ~2000 peak; lift toward WakeNet's range
   auto* wyoming_sat = new sensesp_wyoming::WyomingSatellite(audio, wy_cfg);
   // Privacy gate: the mic-mute switch suppresses wake streaming AND PTT.
   wyoming_sat->set_mic_muted_fn([] { return jlp::voice().mic_muted(); });
