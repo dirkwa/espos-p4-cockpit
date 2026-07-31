@@ -45,8 +45,12 @@ void VoiceControl::set_volume(uint8_t pct) {
 
 void VoiceControl::set_mic_muted(bool muted) {
   mic_muted_ = muted;
-  // If we're muted mid-utterance, drop the current PTT hold immediately.
-  if (muted && sat_) sat_->set_ptt_held(false);
+  if (muted && sat_) {
+    // Drop any active PTT hold, and purge retained mic PCM so /mic_probe can't
+    // surface audio captured before the mute (privacy).
+    sat_->set_ptt_held(false);
+    sat_->wake_pcm_clear();
+  }
 }
 
 VoiceControl& voice() {

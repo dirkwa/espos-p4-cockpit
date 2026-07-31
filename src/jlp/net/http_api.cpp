@@ -148,6 +148,15 @@ esp_err_t mic_probe_get(httpd_req_t* req) {
     httpd_resp_sendstr(req, "wake not enabled");
     return ESP_OK;
   }
+  // Privacy: never hand out mic audio while the mic is muted. The mute also
+  // purges the retained ring (voice().set_mic_muted -> wake_pcm_clear), so an
+  // unmute doesn't leak pre-mute audio either.
+  if (voice().mic_muted()) {
+    httpd_resp_set_status(req, "403 Forbidden");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr(req, "mic muted");
+    return ESP_OK;
+  }
   const size_t max_samples = 32000;  // 2 s @ 16 kHz
   auto* pcm = static_cast<int16_t*>(malloc(max_samples * sizeof(int16_t)));
   if (!pcm) {
@@ -178,6 +187,8 @@ esp_err_t mic_probe_get(httpd_req_t* req) {
   hdr[40] = data_bytes & 0xff; hdr[41] = (data_bytes >> 8) & 0xff;
   hdr[42] = (data_bytes >> 16) & 0xff; hdr[43] = (data_bytes >> 24) & 0xff;
   httpd_resp_set_type(req, "audio/wav");
+  // Don't let mic audio linger in caches/proxies.
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
   httpd_resp_send_chunk(req, (const char*)hdr, sizeof(hdr));
   httpd_resp_send_chunk(req, (const char*)pcm, data_bytes);
   httpd_resp_send_chunk(req, nullptr, 0);
