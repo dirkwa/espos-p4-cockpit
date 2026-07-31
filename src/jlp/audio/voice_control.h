@@ -4,6 +4,7 @@
 // (mic button, mute/volume) can drive them without each widget depending on
 // the satellite / audio-driver types. Mirrors chime().
 
+#include <atomic>
 #include <cstdint>
 
 namespace sensesp_wyoming {
@@ -52,13 +53,15 @@ class VoiceControl {
   // Mute/unmute the mic: while muted, push-to-talk (and future always-on
   // listening) is suppressed — the privacy switch. Panel-local.
   void set_mic_muted(bool muted);
-  bool mic_muted() const { return mic_muted_; }
+  // Atomic: written on the event_loop (widget callback) but read from the
+  // httpd task (the /mic_probe privacy gate + the satellite mute predicate).
+  bool mic_muted() const { return mic_muted_.load(); }
 
  private:
   sensesp_wyoming::WyomingSatellite* sat_ = nullptr;
   sensesp_cockpit_display::AudioDriver* audio_ = nullptr;
   bool speaker_muted_ = false;
-  bool mic_muted_ = false;
+  std::atomic<bool> mic_muted_{false};
   uint8_t volume_ = 50;  // matches WaveshareAudio's default
 };
 
