@@ -1,0 +1,19 @@
+; Local, machine-specific build overrides. NOT committed — copy to
+; platformio_local.ini (which is gitignored) and edit.
+;
+; This exists so boat configuration never reaches the repo or a release
+; binary: `strings <firmware.bin>` prints every compiled-in string, and the
+; merged image published on each release is public. See the "Never commit
+; local/boat configuration" convention in AGENTS.md.
+;
+; Without this file the build is unprovisioned and comes up on the SensESP
+; config AP (SSID p4-cockpit / thisisfine) — which is what a released binary
+; should always do.
+
+[env:p4_cockpit]
+build_flags =
+	${common.build_flags}
+	-D COCKPIT_WIFI_SSID='"YourNetwork"'
+	-D COCKPIT_WIFI_PASSWORD='"YourPassword"'
+	-D COCKPIT_SK_HOST='"192.168.1.10"'
+	-D COCKPIT_SK_PORT=3000

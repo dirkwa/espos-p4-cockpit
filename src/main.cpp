@@ -81,6 +81,16 @@ using namespace sensesp_cockpit_display;
 // Surfaced on the connection-lost banner so the helm shows which
 // server is unreachable. Empty host = discover/configure at runtime; the
 // SensESP config UI is the source of truth either way (see sk_server()).
+// Configuration AP raised when no client credentials are stored yet. The
+// password must be >= 8 chars (WPA2 minimum) or the AP silently fails to
+// start; "thisisfine" is SensESP's own documented default.
+#ifndef COCKPIT_AP_SSID
+#define COCKPIT_AP_SSID "p4-cockpit"
+#endif
+#ifndef COCKPIT_AP_PASSWORD
+#define COCKPIT_AP_PASSWORD "thisisfine"
+#endif
+
 #ifndef COCKPIT_SK_HOST
 #define COCKPIT_SK_HOST ""
 #endif
@@ -197,7 +207,12 @@ void setup() {
   SensESPAppBuilder builder;
   auto app = builder.set_hostname("p4-cockpit")
                  ->set_wifi_client(COCKPIT_WIFI_SSID, COCKPIT_WIFI_PASSWORD)
-                 ->set_wifi_access_point("", "")
+                 // Config portal. MUST have a non-empty SSID: SensESP treats
+                 // an empty pair as "disable the AP", which on a build with no
+                 // compiled-in client credentials leaves the panel with no way
+                 // to be provisioned at all — it sits in station mode hunting
+                 // for a network it was never told about.
+                 ->set_wifi_access_point(COCKPIT_AP_SSID, COCKPIT_AP_PASSWORD)
                  ->set_sk_server(kSkHost, kSkPort)
                  ->get_app();
 

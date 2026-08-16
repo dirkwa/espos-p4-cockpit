@@ -8,6 +8,10 @@ dependencies.lock
 # checked-in sdkconfig.<env> files are the source of truth.
 sdkconfig.*.old
 
+# Local build overrides: WiFi credentials, SK host, personal wake word.
+# Boat config lives here and never in the repo — see platformio_local.ini.example.
+platformio_local.ini
+
 # Agent / tooling scratch
 .claude/
 .build/
