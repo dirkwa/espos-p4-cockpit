@@ -134,8 +134,12 @@ Prefer `scripts/build.sh` over a bare `pio run` on a small machine: a
 full ESP-IDF build otherwise saturates every core (load ~8 on a 4-core
 Pi) and the editor/SSH session stops being scheduled. The wrapper runs
 the build at `nice -n 15`, `ionice -c3` and `-j $(nproc)-1` so one core
-stays free for interactive work. It takes the same arguments as
-`pio run`.
+stays free for interactive work, and holds a lock so two builds can never
+run at once (two concurrent `pio run`s put ~2x the core count of
+compilers on the machine and drop the editor regardless of nice level;
+they also race on `.pio/`). A second invocation waits for the first;
+`BUILD_NOWAIT=1` makes it fail fast instead. It takes the same arguments
+as `pio run`.
 
 Two board targets share a common `[common]` base in `platformio.ini`:
 
