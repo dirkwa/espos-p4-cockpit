@@ -123,7 +123,6 @@ void Waveshare7BDisplay::init_backlight() {
   ch.gpio_num = kBacklightGpio;
   ch.speed_mode = LEDC_LOW_SPEED_MODE;
   ch.channel = LEDC_CHANNEL_1;
-  ch.intr_type = LEDC_INTR_DISABLE;
   ch.timer_sel = LEDC_TIMER_1;
   ch.duty = 0;
   ch.hpoint = 0;

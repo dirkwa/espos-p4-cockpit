@@ -405,7 +405,7 @@ void stream_client_stop() {
   // sockets are not full-duplex safe here, and a shutdown() from the UI
   // task while the stream task sits in recv()/close() on the same fd
   // deadlocks both inside the sock lock (observed live: first tab-away
-  // froze the UI until the ui_wdt rebooted the panel). The task checks
+  // froze the UI until the UI watchdog rebooted the panel). The task checks
   // `running` around every socket op; while frames are flowing it exits
   // within one frame, and a dead server is bounded by the 10 s recv
   // timeout. The 1.x client used the same flag-only stop for this reason.

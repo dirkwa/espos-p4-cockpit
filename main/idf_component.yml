@@ -10,4 +10,3 @@ dependencies:
       - if: "target == esp32p4"
   bblanchon/arduinojson: "^7.4.0"
   espressif/esp_new_jpeg: "^1.0.0"
-  espressif/mdns: "==1.11.3"

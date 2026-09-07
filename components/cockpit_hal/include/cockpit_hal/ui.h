@@ -36,8 +36,5 @@ void unlock();
 
 DisplayDriver* display();
 
-/** Heartbeat counter incremented every 250 ms on the UI thread (watchdog). */
-uint32_t heartbeat();
-
 }  // namespace ui
 }  // namespace cockpit_hal

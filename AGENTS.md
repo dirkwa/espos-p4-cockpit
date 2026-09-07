@@ -8,9 +8,12 @@ NMEA 2000 gateway (TWAI rx/tx + a candump TCP server on port 2599).
 
 2.x is a pure ESP-IDF 6 project on **espOS** (`espos/` submodule): WiFi,
 provisioning portal, config store + web UI, SignalK discovery / token /
-stream in and out (`espos_sk_subscribe`, `espos_sk_put`), logs, core dump
-and signed OTA are espOS; this repo is the panel on top. SensESP and
-PlatformIO are gone (1.x lives on `master`).
+stream in and out (`espos_sk_subscribe`, `espos_sk_put`), the SignalK REST
+client (`espos_sk_http.h`: `espos_sk_http_get`, `espos_sk_get_value/meta`),
+mDNS (`espos_mdns_add_service`), the device watchdog policy
+(`espos_health.h`), events (`espos_event.h`), logs, core dump and signed OTA
+are espOS; this repo is the panel on top. SensESP and PlatformIO are gone
+(1.x lives on `master`).
 
 Companion projects:
 - **signalk-hmi-designer** — the SignalK webapp that designs and pushes
@@ -37,7 +40,7 @@ Companion projects:
 |-------------------------------------------------------|-------------------------------------------|
 | [README.md](README.md)                                | High-level overview + endpoint table      |
 | [JLP-PROTOCOL.md](JLP-PROTOCOL.md)                    | **The wire contract** — schema, endpoints, widget catalogue, alert overlay |
-| [main/app_main.cpp](main/app_main.cpp)                | Boot sequence — single source of truth    |
+| [main/app_main.cpp](main/app_main.cpp)                | Boot: `espos_start()` with the panel as `before_network`, event handlers, N2K, API |
 | [main/jlp/](main/jlp/)                                | All player code                           |
 | [main/jlp/widgets/widget_factory.cpp](main/jlp/widgets/widget_factory.cpp) | Every widget kind in one file |
 | [main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp)   | Apply pipeline + atomic swap   |
@@ -45,7 +48,7 @@ Companion projects:
 | [main/jlp/notifications_registry.cpp](main/jlp/notifications_registry.cpp)| Notifications + ack state              |
 | [main/jlp/alert_overlay.cpp](main/jlp/alert_overlay.cpp)                  | Full-screen alarm modal                |
 | [components/cockpit_hal/](components/cockpit_hal/)    | Display/touch HAL, LVGL + the UI task (`ui::post/after/every`) |
-| [CMakeLists.txt](CMakeLists.txt) / [sdkconfig.defaults](sdkconfig.defaults) / [main/idf_component.yml](main/idf_component.yml) | Toolchain pin, config, registry deps |
+| [CMakeLists.txt](CMakeLists.txt) / [sdkconfig.defaults](sdkconfig.defaults) / [main/idf_component.yml](main/idf_component.yml) | espOS prologue + partition table, the config that differs from espOS, registry deps |
 
 ## Architecture invariants
 
@@ -67,12 +70,18 @@ single feature.
 4. **LVGL is single-writer** on the `ui` task (`cockpit_hal::ui`). The
    HTTP task parses + validates, then marshals build/swap with
    `ui::post(...)`. espOS SignalK callbacks (`espos_sk_subscribe`) fire on
-   the stream task: copy the strings and `ui::post` before any `lv_*`
-   work. `ui::after/every` are LVGL timers (UI task). No `lv_*` call from
-   any other task. Ever.
-5. **OSS only**, programmatic LVGL API only — no LVGL Pro / XML
+   the stream task and `ESPOS_EVENT` handlers on the default event-loop
+   task: copy what you need and `ui::post` before any `lv_*` work.
+   `ui::after/every` are LVGL timers (UI task). No `lv_*` call from any
+   other task. Ever.
+5. **Blocking SignalK REST calls** (`espos_sk_http_get`,
+   `espos_sk_get_value/meta`) run on their own worker tasks
+   (`jlp_zonefetch`, `jlp_fetch`, `jlp_drophere`, `wake_discover`) — never
+   on the UI task, the stream task, an event handler or a URI handler
+   (`espos/docs/signalk.md`, "HTTP requests to the server").
+6. **OSS only**, programmatic LVGL API only — no LVGL Pro / XML
    runtime / GPL deps.
-6. **Wire format is additive.** New optional fields are fine. Removing
+7. **Wire format is additive.** New optional fields are fine. Removing
    a field, renaming, or changing semantics bumps `schema` from 1 → 2.
 
 ## Pipeline: parse → validate → stage → swap → persist
@@ -103,7 +112,8 @@ wins at runtime.
   for that path to one callback.
 - `zone_registry` caches `{zones, description}` per path. The metadata
   is fed by the subscription `SubjectRegistry` opens for each bound path
-  (the REST cold-start fetch in `zone_fetch.cpp` also calls `apply_meta`).
+  (the REST cold-start fetch in `zone_fetch.cpp`, via `espos_sk_get_meta`
+  / `espos_sk_get_value`, also calls `apply_meta` and seeds quiet values).
   Widgets that bind a path read from it on every value change. Zones
   live in **raw SK units**; match against the raw value, not the
   display-scaled one.
@@ -143,18 +153,26 @@ wins at runtime.
 
 ```bash
 . ~/esp-idf-v6.0.2/export.sh           # the version in .idf-version
-scripts/build-ui.sh                    # nice'd espOS web UI → espos/ui/dist-gz
-scripts/build.sh                       # nice'd idf.py build, one at a time
-idf.py -p /dev/ttyACM0 flash monitor
+scripts/build.sh -DIDF_TARGET=esp32p4  # → espos/scripts/build.sh: locked, nice'd, capped ninja
+scripts/build.sh -p /dev/ttyACM0 flash monitor
 curl -sf http://<device-ip>:8081/hello | jq .
 curl -sf "http://<device-ip>/api/v1/logs?limit=200" | jq -r '.lines[]'   # espOS log ring
+curl -sf http://<device-ip>/api/v1/system/info | jq .last_reset          # why the watchdog rebooted, if it did
 ```
 
-Prefer the wrappers over bare `idf.py build` / `npm run build` on a small
-machine: a full build saturates every core and the editor/SSH session
-stops being scheduled. Both run at `nice -n 15`, `ionice -c3`;
-`build.sh` caps ninja at `-j 3` (override with `BUILD_JOBS`) and holds a
-lock so two builds never race on `build/`.
+Always build through the wrapper, never bare `idf.py build`: a full build
+saturates every core of a small machine and the editor/SSH session stops
+being scheduled. `scripts/build.sh` is a shim to `espos/scripts/build.sh`,
+which holds ONE lock for every espOS project on the machine (two builds at
+once have frozen the host), runs at `nice -n 15` / `ionice -c3`, drives
+ninja on half the cores (`BUILD_JOBS` overrides) and moves `TMPDIR` off the
+RAM disk. The web UI bundle is committed in espOS — no Node, no UI build
+step.
+
+sdkconfig: espOS's `sdkconfig.d/espos.defaults(.esp32p4)` come first and
+this repo's `sdkconfig.defaults` holds only what differs; a git-ignored
+`sdkconfig.local` takes bench overrides. Defaults apply to a fresh
+`sdkconfig` only — delete it after changing any of them.
 
 Boards: the 7B (1024×600 EK79007) is the target; the 4B HAL is parked
 until a board is on hand (`components/esp_lcd_st7703` is excluded from the
@@ -168,10 +186,10 @@ If flashing dies with `OSError: [Errno 71] Protocol error` on
 
 Registry components are pinned in `main/idf_component.yml` and
 `components/*/idf_component.yml` (lvgl 9.x, ArduinoJson 7, esp_new_jpeg,
-mdns, esp_hosted + esp_wifi_remote for the P4's C6 radio); espOS pins its
-own. LVGL is configured by `components/cockpit_hal/lv_conf.h`
-(`LV_CONF_PATH`, Kconfig LVGL is switched off). `managed_components/` is
-not committed.
+esp_hosted + esp_wifi_remote for the P4's C6 radio); espOS pins its own,
+including the mDNS responder the panel registers its service with. LVGL is
+configured by `components/cockpit_hal/lv_conf.h` (`LV_CONF_PATH`, Kconfig
+LVGL is switched off). `managed_components/` is not committed.
 
 ## Adding a widget kind
 
@@ -205,11 +223,13 @@ designer refuses to push widget kinds the device doesn't advertise.
 
 | Task              | Touches LVGL? | Notes |
 |-------------------|---------------|-------|
-| `ui` task         | yes           | `lv_timer_handler`, `ui::post` queue, `ui::after/every` timers, layout build/swap, alert overlay |
+| `ui` task         | yes           | `lv_timer_handler`, `ui::post` queue, `ui::after/every` timers, layout build/swap, alert overlay; watched by espOS (`taskStalled` after 15 s, task-watchdog panic at 30 s) |
 | `httpd_api` (8081)| no directly   | Parses + validates POSTs, marshals to the UI task, waits on completion semaphore |
 | espOS httpd (80)  | no            | web UI + REST (config, OTA, logs, core dump) |
 | `esp_timer` 1 ms  | no            | `lv_tick_inc(1)` only — lock-free |
 | `espos_skws` task | no            | espOS SignalK stream; subscription callbacks run here and `ui::post` their work |
+| esp_event loop    | no            | `ESPOS_EVENT` handlers (network up/down, token approved, stream connected/disconnected) `ui::post` their work |
+| `jlp_*` / `wake_discover` | no    | Short-lived workers for the blocking espOS REST calls (zone/value seed, layout fetch, drop-here, wake discovery) |
 | `audio` task      | no            | Drains the chime clip queue; blocking I2S write to the ES8311. `WaveshareAudio::play_pcm` (called from the UI task) copies + enqueues, never blocks |
 | `wyoming_*` tasks | no            | Voice satellite (`espos_voice`): TCP server, mic streaming, wake feed/fetch (esp-sr AFE) |
 | `twai_rx` / candump | no          | N2K receive + per-client fan-out to the candump TCP server |
@@ -223,15 +243,19 @@ fix here.
 
 **If a fix belongs to espOS, it lands in espOS.** A change is espOS's when
 it is about WiFi, provisioning, config, the config web UI, SignalK
-discovery / token / stream, logs, core dump or OTA — regardless of which
-repo you were staring at when you found it. Panel-specific means display,
-touch, audio, LVGL, JLP, voice or N2K.
+discovery / token / stream / REST client, mDNS, the health watchdog, logs,
+core dump or OTA — regardless of which repo you were staring at when you
+found it. Panel-specific means display, touch, audio, LVGL, JLP, voice or
+N2K.
 
 The trap is `sdkconfig.defaults`. A radio or hosted-transport setting
 fixed only here is invisible to every other espOS board, and the next
 project rediscovers the same wedge from scratch. `CONFIG_WIFI_RMT_RX_BA_WIN`
 was fixed in this repo first and had to be upstreamed afterwards
-(cockpit #72 → espOS #1); do it in the other order.
+(cockpit #72 → espOS #1); do it in the other order. Since the sdkconfig is
+inherited, that now means: a key that belongs to every P4 board goes into
+`espos/sdkconfig.d/espos.defaults.esp32p4`, and this repo's
+`sdkconfig.defaults` keeps only what is the panel's.
 
 Order of work:
 
@@ -257,9 +281,9 @@ when the bump lands.
 
 ## Repo conventions
 
-- **Build/test gate**: `scripts/build.sh` must succeed. There are no host
-  tests in this repo (espOS has them) — verify on device via the espOS
-  log ring + curl probes.
+- **Build/test gate**: `scripts/build.sh` must succeed with zero warnings.
+  There are no host tests in this repo (espOS has them) — verify on device
+  via the espOS log ring + curl probes.
 - **Commits and PR titles**: Angular Conventional Commits —
   `type(scope): subject`, imperative, subject ≤ 50 chars. Types:
   `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`,
