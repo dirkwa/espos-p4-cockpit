@@ -1,9 +1,10 @@
 #include "layout_fetch.h"
 
+#include <string>
+
 #include "cockpit_hal/ui.h"
-#include "esp_http_client.h"
-#include "espos_sk.h"
 #include "esp_log.h"
+#include "espos_sk_http.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -15,99 +16,57 @@ namespace jlp {
 
 namespace {
 
+constexpr const char* kPath =
+    "/signalk/v1/applicationData/global/p4-cockpit/1/layout.json";
+// Same cap as POST /layout: a layout the push API would refuse is not
+// worth applying from the server either.
 constexpr size_t kMaxBodyBytes = 64 * 1024;
 
-// Pulled into its own task so the blocking esp_http_client_perform
-// doesn't stall the event_loop. The fetched body is handed back to
-// LayoutManager via a one-shot onDelay(0) so the apply runs on the
-// event_loop task (LVGL single-writer).
-struct FetchArgs {
-  std::string host;
-  uint16_t port;
-  std::string token;   // espOS access token ("" on an open server)
-};
-
-void fetch_task(void* arg) {
-  auto* a = static_cast<FetchArgs*>(arg);
-  std::string url =
-      "http://" + a->host + ":" + std::to_string(a->port) +
-      "/signalk/v1/applicationData/global/p4-cockpit/1/layout.json";
-
-  esp_http_client_config_t cfg = {};
-  cfg.url = url.c_str();
-  cfg.timeout_ms = 5000;
-  esp_http_client_handle_t client = esp_http_client_init(&cfg);
-  if (!client) {
-    ESP_LOGW(TAG, "http client init failed");
-    delete a;
-    vTaskDelete(NULL);
-    return;
-  }
-  if (!a->token.empty()) {
-    std::string auth = "Bearer " + a->token;
-    esp_http_client_set_header(client, "Authorization", auth.c_str());
-  }
-
-  esp_err_t err = esp_http_client_open(client, 0);
+// Own task: the GET blocks (espos_sk_http.h) and the UI task must not. The
+// body is handed back with ui::post so the apply runs on the UI task (LVGL
+// single-writer).
+void fetch_task(void*) {
+  espos_sk_http_opts_t opts = {};
+  opts.max_body = kMaxBodyBytes;
+  espos_sk_http_resp_t r = {};
+  esp_err_t err = espos_sk_http_get(kPath, &opts, &r);
   if (err != ESP_OK) {
     ESP_LOGI(TAG, "applicationData unreachable (%s); keeping current layout",
              esp_err_to_name(err));
-    esp_http_client_cleanup(client);
-    delete a;
-    vTaskDelete(NULL);
-    return;
-  }
-
-  int content_length = esp_http_client_fetch_headers(client);
-  int status = esp_http_client_get_status_code(client);
-  if (status != 200) {
+  } else if (r.status != 200) {
     ESP_LOGI(TAG, "applicationData returned %d; keeping current layout",
-             status);
-    esp_http_client_cleanup(client);
-    delete a;
-    vTaskDelete(NULL);
-    return;
+             r.status);
+  } else if (r.truncated) {
+    // Never parse a clipped body: it would be rejected with a misleading
+    // error, or worse, apply half a layout.
+    ESP_LOGW(TAG, "applicationData layout exceeds %u bytes; keeping current layout",
+             (unsigned)kMaxBodyBytes);
+  } else {
+    ESP_LOGI(TAG, "fetched %u bytes from applicationData", (unsigned)r.len);
+    auto* body = new std::string(r.body, r.len);
+    cockpit_hal::ui::post([body]() {
+      auto res = layout_manager().apply(*body, ApplySource::BootFetched);
+      if (!res.ok) {
+        ESP_LOGW(TAG, "fetched layout rejected: %s", res.err.c_str());
+      }
+      delete body;
+    });
   }
-
-  // content_length is -1 if chunked; we still cap the read.
-  size_t cap = (content_length > 0 && (size_t)content_length < kMaxBodyBytes)
-                   ? content_length
-                   : kMaxBodyBytes;
-  auto* body = new std::string();
-  body->resize(cap);
-  int total = 0;
-  while (total < (int)cap) {
-    int n = esp_http_client_read(client, &(*body)[total], cap - total);
-    if (n <= 0) break;
-    total += n;
-  }
-  body->resize(total);
-  esp_http_client_cleanup(client);
-
-  ESP_LOGI(TAG, "fetched %d bytes from applicationData", total);
-  cockpit_hal::ui::post([body]() mutable {
-    auto r = layout_manager().apply(*body, ApplySource::BootFetched);
-    if (!r.ok) {
-      ESP_LOGW(TAG, "fetched layout rejected: %s", r.err.c_str());
-    }
-    delete body;
-  });
-
-  delete a;
+  espos_sk_http_resp_free(&r);
   vTaskDelete(NULL);
 }
 
 }  // namespace
 
-void layout_fetch_async_apply(const std::string& sk_host, uint16_t sk_port) {
-  // Defer kickoff so the WiFi connect has time to complete after setup.
-  cockpit_hal::ui::after(5000, [sk_host, sk_port]() {
-    char tok[512] = "";
-    (void)espos_sk_get_token(tok, sizeof(tok));
-    auto* a = new FetchArgs{sk_host, sk_port, tok};
-    if (xTaskCreate(fetch_task, "jlp_fetch", 8192, a, 4, NULL) != pdPASS) {
+void layout_fetch_async_apply() {
+  // A few seconds after the connect, not on it: the zone seed for the
+  // stored layout fires on the same connect and espOS runs its own
+  // reconnect traffic, and the REST client bounds requests in flight — a
+  // boot layout that lands a moment later is invisible, a fetch that gave
+  // up waiting for a slot is not.
+  cockpit_hal::ui::after(5000, []() {
+    if (xTaskCreate(fetch_task, "jlp_fetch", 8192, nullptr, 4, NULL) != pdPASS) {
       ESP_LOGE(TAG, "failed to spawn fetch task");
-      delete a;
     }
   });
 }

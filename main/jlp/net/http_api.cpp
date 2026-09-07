@@ -5,6 +5,7 @@
 #include "esp_http_server.h"
 #include "espos_cfg_keys.h"
 #include "espos_config.h"
+#include "espos_sk.h"
 #include "espos_wifi.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -27,7 +28,6 @@
 #include "../layout/store.h"
 #include "../audio/chime.h"
 #include "../audio/voice_control.h"
-#include "sk_server.h"
 #include "stream_client.h"
 
 static const char* TAG = "jlp.http";
@@ -836,7 +836,8 @@ esp_err_t stream_soak_get(httpd_req_t* req) {
         err = "stream is owned by the layout's widget";
       }
     } else if (httpd_query_key_value(q, "start", val, sizeof(val)) == ESP_OK) {
-      std::string host = sk_server().host;
+      espos_sk_server_t srv;
+      std::string host = espos_sk_get_server(&srv) == ESP_OK ? srv.host : "";
       long soak_port = 5004;
       bool bad = strcmp(val, "1") != 0;
       if (bad) err = "start must be 1";

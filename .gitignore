@@ -31,6 +31,8 @@ build/
 build-*/
 sdkconfig
 sdkconfig.old
+# Bench-local overrides espos_project_prologue() layers on top of sdkconfig.defaults.
+sdkconfig.local
 managed_components/
 secure_boot_signing_key.pem
 *.pem

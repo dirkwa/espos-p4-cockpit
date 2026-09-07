@@ -13,6 +13,7 @@
 
 #include "cockpit_hal/ui.h"
 #include "esp_timer.h"
+#include "espos_sk.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -22,7 +23,6 @@ namespace ui = cockpit_hal::ui;
 #include "../audio/voice_control.h"
 #include "../net/drop_here.h"
 #include "../net/sk_put.h"
-#include "../net/sk_server.h"
 #include "../net/stream_client.h"
 #include "../notifications_registry.h"
 #include "../subject_registry.h"
@@ -2667,7 +2667,11 @@ std::vector<StreamCtx*> g_stream_widgets;
 
 void stream_try_start(StreamCtx* c) {
   if (c->started) return;
-  std::string host = c->host.empty() ? sk_server().host : c->host;
+  std::string host = c->host;
+  if (host.empty()) {  // follow the SK server
+    espos_sk_server_t srv;
+    if (espos_sk_get_server(&srv) == ESP_OK) host = srv.host;
+  }
   if (host.empty()) return;  // SK not discovered yet; the watch timer retries
 
   auto sh = c->sh;

@@ -30,7 +30,7 @@ The UI is **runtime-loadable**: instead of rebuilding firmware per layout change
 - **Persistence** — successful pushes are saved to the `layout` NVS partition so the layout survives a power cycle, with a compiled-in default fallback.
 - **Boot-time fetch** from SK `applicationData` so a fresh device picks up the fleet's last-known layout.
 - mDNS-announced as `_signalk-player._tcp` so designers can discover it.
-- Everything else a device needs — WiFi setup portal, config UI at `http://<device>/`, SignalK server discovery + access request, signed OTA from a URL or a version manifest with automatic rollback, log ring and core-dump viewer — is espOS ([its docs](https://github.com/dirkwa/espOS/tree/main/docs)).
+- Everything else a device needs — WiFi setup portal, config UI at `http://<device>/`, SignalK server discovery + access request, the REST client the panel fetches meta/values/layouts with, mDNS, the device watchdog (low memory, stalled task, stalled SignalK link), signed OTA from a URL or a version manifest with automatic rollback, log ring and core-dump viewer — is espOS ([its docs](https://github.com/dirkwa/espOS/tree/main/docs)).
 
 Port status (2.x): display, layouts, SK values/meta/notifications, anchor
 PUTs, the layout API, the audio/voice satellite (ES8311 + ES7210, esp-sr
@@ -38,6 +38,24 @@ WakeNet or signalk-openwakeword) and the NMEA 2000 gateway are all ported
 and running on the panel. The BLE gateway is **not** part of 2.x: 1.x
 linked the library but never instantiated it, and BLE scanning through the
 C6 is blocked upstream — it stays a separate concern.
+
+## Boot
+
+`app_main` is one `espos_start()` call: espOS brings up its log ring and
+config store, runs the panel bring-up as the `before_network` hook (display,
+touch, LVGL and the stored layout are on screen within a second, then audio
+and the voice satellite), and only then starts the HTTP server, WiFi, SignalK
+and OTA. The N2K gateway, the layout API on :8081 and its
+`_signalk-player._tcp` record follow. From there the panel reacts to espOS
+events — network up/down, token approved, stream connected/disconnected —
+rather than polling: the first stream connect seeds quiet paths and fetches
+the fleet layout, and drives the status strip and the connection-lost banner.
+
+Watchdog: espOS's health policy owns it (`espos/docs/health.md`) — `lowMemory`,
+`taskStalled`, `netDown` (never fatal) and `skLinkStalled` are built in; the
+panel adds `n2kBus` (fatal once a bus that talked falls silent for 30 s) and
+registers its UI task as a watched task. Every condition also reaches the
+server as `notifications.espos.<hostname>.<key>`.
 
 ## Boot priority chain
 
@@ -137,20 +155,29 @@ pins). No PlatformIO, no Arduino.
 ```bash
 git clone --recursive https://github.com/dirkwa/espos-p4-cockpit   # espos/ is a submodule
 . ~/esp-idf-v6.0.2/export.sh                                          # or wherever that IDF lives
-scripts/build-ui.sh                        # optional: the espOS web UI → LittleFS image
-idf.py set-target esp32p4
-scripts/build.sh
-idf.py -p /dev/ttyACM0 flash monitor
+scripts/build.sh -DIDF_TARGET=esp32p4      # first build sets the target
+scripts/build.sh                           # afterwards
+scripts/build.sh -p /dev/ttyACM0 flash monitor
 ```
 
-Both wrappers run the build under `nice`/`ionice` and hold a lock so two
-of them never race on the same output. `build-ui.sh` runs `npm run build`
-in `espos/ui` (re-running `npm ci` when the lockfile changed);
-`build.sh` runs `idf.py reconfigure` and then `ninja -j 3` — IDF 6's
-`idf.py` has no `-j`, so capping parallelism means driving ninja
-directly (override with `BUILD_JOBS`). On a 4-core Pi a bare build takes
-the machine away from your editor; on a big workstation `idf.py build`
-is fine.
+`scripts/build.sh` hands everything to espOS's wrapper
+(`espos/scripts/build.sh`): one lock per machine so two espOS builds never
+run at once, `nice`/`ionice`, `idf.py reconfigure` followed by `ninja` on
+half the cores (IDF 6's `idf.py` has no `-j`; `BUILD_JOBS` overrides), and
+`TMPDIR` moved off the RAM disk. Anything that is not a plain build
+(`flash`, `monitor`, `menuconfig`) it passes to `idf.py` unchanged, still
+locked. On a 4-core Pi a bare `idf.py build` takes the machine away from
+your editor; on a big workstation it is fine.
+
+No Node is needed: the espOS web UI bundle is committed in
+`espos/ui/dist-gz` and packed into the `storage` partition by the build.
+
+The sdkconfig is layered: espOS's `sdkconfig.d/espos.defaults(.esp32p4)`
+first, this project's `sdkconfig.defaults` (only what differs — flash,
+PSRAM, LVGL, esp-sr, the panel's memory tuning) on top, then a git-ignored
+`sdkconfig.local` for bench overrides. After changing any of them delete
+`sdkconfig` (or `build/sdkconfig`) once — IDF applies defaults only to a
+fresh one.
 
 The first build generates a *development* app-signing key
 (`secure_boot_signing_key.pem`, git-ignored). Devices flashed with a
@@ -202,8 +229,8 @@ request appears in the server's Security → Access Requests; approve it
 once. Updates afterwards go over espOS OTA (`http://<device>/` → OTA, or
 `POST /api/v1/ota {"url": …}`), signed and rollback-protected.
 
-The build produces `build/cockpit.bin` (signed) and, with the espOS UI
-built, `build/storage.bin`; `python scripts/merge_firmware.py --build-dir
+The build produces `build/cockpit.bin` (signed) and `build/storage.bin`
+(the espOS web UI); `python scripts/merge_firmware.py --build-dir
 build --chip esp32p4 --out p4_cockpit-merged.bin` makes the single image
 the release workflow attaches (flash at `0x0`). Releases publish it as
 `p4_cockpit-<version>-merged.bin`, alongside
@@ -233,7 +260,7 @@ download mode.
 
 ## Push your first layout
 
-Once the device log (`http://<device>/` → Logs) shows `announced _signalk-player._tcp on port 8081`:
+Once the device log (`http://<device>/` → Logs) shows `advertising _signalk-player._tcp on port 8081`:
 
 ```bash
 IP=<device-ip>

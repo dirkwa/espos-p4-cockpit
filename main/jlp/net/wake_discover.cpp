@@ -8,13 +8,12 @@
 #include <vector>
 
 #include "ArduinoJson.h"
-#include "esp_http_client.h"
 #include "esp_log.h"
 #include "espos_sk.h"
+#include "espos_sk_http.h"
 #include "espos_voice/wyoming_satellite.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "sk_server.h"
 
 namespace jlp {
 namespace {
@@ -29,59 +28,31 @@ espos_voice::WyomingSatellite* s_sat = nullptr;
 std::string s_discovered_for;
 std::atomic<bool> s_running{false};
 
-struct BodySink {
-  std::string body;
-  bool truncated = false;
-};
-
 // The document is ~1.7 KB today and grows by ~210 bytes per wake model the
 // service advertises -- and adding custom models is exactly what this feature
 // encourages. Sized well clear of that, and a hit is reported rather than
 // silently producing JSON that fails to parse.
 constexpr size_t kMaxBody = 8192;
 
-esp_err_t on_http_event(esp_http_client_event_t* evt) {
-  if (evt->event_id == HTTP_EVENT_ON_DATA && evt->user_data) {
-    auto* sink = static_cast<BodySink*>(evt->user_data);
-    if (sink->body.size() + evt->data_len <= kMaxBody) {
-      sink->body.append(static_cast<const char*>(evt->data), evt->data_len);
-    } else {
-      sink->truncated = true;
-    }
-  }
-  return ESP_OK;
-}
-
-bool fetch_status(const std::string& url, const std::string& token,
-                  std::string* out) {
-  BodySink sink;
-  esp_http_client_config_t cfg = {};
-  cfg.url = url.c_str();
-  cfg.timeout_ms = 3000;
-  cfg.event_handler = on_http_event;
-  cfg.user_data = &sink;
-  // perform(), not open()/fetch_headers(): the latter enables a body cache
-  // whose assert has rebooted this device mid-fetch before (see zone_fetch).
-  esp_http_client_handle_t c = esp_http_client_init(&cfg);
-  if (!c) return false;
-  if (!token.empty()) {
-    esp_http_client_set_header(c, "Authorization", ("Bearer " + token).c_str());
-  }
-  esp_err_t err = esp_http_client_perform(c);
-  int status = esp_http_client_get_status_code(c);
-  esp_http_client_cleanup(c);
-  if (err != ESP_OK || status != 200) {
-    ESP_LOGI(kTag, "status query: err=%s http=%d", esp_err_to_name(err), status);
-    return false;
-  }
-  if (sink.truncated) {
+bool fetch_status(std::string* out) {
+  espos_sk_http_opts_t opts = {};
+  opts.timeout_ms = 3000;
+  opts.max_body = kMaxBody;
+  espos_sk_http_resp_t r = {};
+  esp_err_t err = espos_sk_http_get(kPath, &opts, &r);
+  bool ok = false;
+  if (err != ESP_OK || r.status != 200) {
+    ESP_LOGI(kTag, "status query: err=%s http=%d", esp_err_to_name(err), r.status);
+  } else if (r.truncated) {
     // Parsing a clipped document would fail with a misleading "did not parse".
     ESP_LOGW(kTag, "status document exceeds %u bytes — ignoring",
              (unsigned)kMaxBody);
-    return false;
+  } else {
+    out->assign(r.body, r.len);
+    ok = true;
   }
-  *out = std::move(sink.body);
-  return true;
+  espos_sk_http_resp_free(&r);
+  return ok;
 }
 
 // The satellite's wake path wants a numeric address (inet_pton), and the SK
@@ -125,16 +96,13 @@ void discover_task(void*) {
                                                        : kSlowDelayMs));
     }
 
-    const SkServer srv = sk_server();
-    if (srv.host.empty() || !s_sat) continue;
+    // The server the request went to is the wake host: the plugin runs on
+    // the SignalK server, and its advertised uri carries only the port.
+    espos_sk_server_t srv;
+    if (espos_sk_get_server(&srv) != ESP_OK || !s_sat) continue;
 
-    char tok[512] = "";
-    (void)espos_sk_get_token(tok, sizeof(tok));
-
-    const std::string url =
-        "http://" + srv.host + ":" + std::to_string(srv.port) + kPath;
     std::string body;
-    if (!fetch_status(url, tok, &body)) continue;
+    if (!fetch_status(&body)) continue;
 
     JsonDocument doc;
     if (deserializeJson(doc, body) != DeserializationError::Ok) {
@@ -162,7 +130,7 @@ void discover_task(void*) {
 
     std::string ip;
     if (!resolve_ipv4(srv.host, &ip)) {
-      ESP_LOGW(kTag, "could not resolve %s", srv.host.c_str());
+      ESP_LOGW(kTag, "could not resolve %s", srv.host);
       continue;
     }
 
@@ -226,9 +194,9 @@ void wake_discover_start(espos_voice::WyomingSatellite* sat) {
   // stays effectively one-shot.
   if (!sat || s_running.load()) return;
 
-  const SkServer srv = sk_server();
-  if (srv.host.empty()) return;
-  const std::string key = srv.host + ":" + std::to_string(srv.port);
+  espos_sk_server_t srv;
+  if (espos_sk_get_server(&srv) != ESP_OK) return;
+  const std::string key = std::string(srv.host) + ":" + std::to_string(srv.port);
   if (key == s_discovered_for) return;
   s_discovered_for = key;
   s_sat = sat;

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
 #include "cockpit_hal/ui.h"
 
-#include <atomic>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -9,6 +8,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "espos_health.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -27,7 +27,6 @@ SemaphoreHandle_t s_lvgl_lock = nullptr;   // recursive: LVGL calls from other t
 SemaphoreHandle_t s_started = nullptr;
 std::mutex s_queue_mutex;
 std::deque<std::function<void()>> s_queue;
-std::atomic<uint32_t> s_heartbeat{0};
 uint32_t s_next_handle = 1;
 std::map<uint32_t, lv_timer_t*> s_timers;
 
@@ -76,18 +75,17 @@ void drain_queue() {
 }
 
 void ui_task(void*) {
-  uint32_t last_hb = 0;
+  // espOS's watchdog policy raises taskStalled (fatal) when this loop stops
+  // kicking for 15 s, and the IDF task watchdog panics at 30 s as the hard
+  // stop. A layout build takes hundreds of ms; a stalled LVGL never returns.
+  espos_health_watch_task("ui", 15000);
   xSemaphoreGive(s_started);
   for (;;) {
     xSemaphoreTakeRecursive(s_lvgl_lock, portMAX_DELAY);
     drain_queue();
     uint32_t wait = lv_timer_handler();
     xSemaphoreGiveRecursive(s_lvgl_lock);
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    if (now - last_hb >= 250) {
-      s_heartbeat.fetch_add(1);
-      last_hb = now;
-    }
+    espos_health_kick();
     if (wait > 20) wait = 20;   // stay responsive to post()
     if (wait == 0) wait = 1;
     vTaskDelay(pdMS_TO_TICKS(wait));
@@ -210,7 +208,6 @@ bool on_ui_thread() { return xTaskGetCurrentTaskHandle() == s_task; }
 void lock() { xSemaphoreTakeRecursive(s_lvgl_lock, portMAX_DELAY); }
 void unlock() { xSemaphoreGiveRecursive(s_lvgl_lock); }
 DisplayDriver* display() { return s_display; }
-uint32_t heartbeat() { return s_heartbeat.load(); }
 
 }  // namespace ui
 }  // namespace cockpit_hal
