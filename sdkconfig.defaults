@@ -8,6 +8,16 @@
 # — and selects the partition table from its PARTITIONS argument. Later files
 # win: to override an espOS value, restate the key here; never copy the file.
 
+# ---- Target: this firmware is for one board and no other.
+# Without it, a build that starts from a fresh sdkconfig (deleted to change
+# something, or a clean checkout) silently configures for plain esp32 -- IDF's
+# default -- and fails much later with a missing esp_lcd_mipi_dsi.h, because
+# the DSI half of esp_lcd only builds for a SoC that has the peripheral. The
+# error names a header, not the target, so it reads as a missing dependency.
+# IDF reads this key out of the defaults (tools/cmake/targets.cmake), so
+# stating it here makes `idf.py build` correct with no -DIDF_TARGET at all.
+CONFIG_IDF_TARGET="esp32p4"
+
 # ---- Flash: 16 MB. The panel brings its own p4_16mb.csv (the esp-sr model
 # partition sits at the offset 1.x flashed it to), so the size is stated here
 # rather than inferred from a bundled espOS table.
