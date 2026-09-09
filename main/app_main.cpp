@@ -32,6 +32,7 @@
 #include "espos_mdns.h"
 #include "espos_n2k/candump_tcp_server.h"
 #include "espos_n2k/twai_receiver.h"
+#include "espos_n2k_api.h"
 #include "espos_n2k/twai_transmitter.h"
 #include "espos_sk.h"
 #include "espos_voice/wyoming_satellite.h"
@@ -311,6 +312,11 @@ extern "C" void app_main(void) {
   n2k_rx.start();
   n2k_tx.start();
   n2k_server.start();
+  /* GET /api/v1/n2k on the espOS server: whether the driver is up, whether
+   * anything has ever arrived, how long ago, and whether the controller is
+   * seeing bus errors. Without it a silent bus and an unplugged one are the
+   * same empty candump socket. */
+  espos_n2k_api_register(&n2k_rx);
 
   // ---- the layout push API (designer) on its own port + mDNS
   int32_t api_port = 8081;
