@@ -4,11 +4,16 @@
 # the esp-sr WakeNet "model" partition kept at its historical offset so a model
 # flashed by the 1.x firmware survives. Offsets are explicit on purpose.
 # Name,     Type, SubType,  Offset,   Size,     Flags
-nvs,        data, nvs,      0x9000,   0x6000,
-otadata,    data, ota,      0xf000,   0x2000,
-phy_init,   data, phy,      0x11000,  0x1000,
-nvs_keys,   data, nvs_keys, 0x12000,  0x1000,   encrypted
-coredump,   data, coredump, 0x13000,  0x40000,
+# nvs is 0xc000 (48K), matching espOS's own tables: a graph node stores its
+# settings here and a curve table is one string key of up to ~4 KB. The three
+# partitions after it shift by 0x6000 into the spare space before ota_0, which
+# does NOT move -- everything from ota_0 onwards keeps its offset, so a model
+# or layout partition flashed by an earlier firmware stays where it was.
+nvs,        data, nvs,      0x9000,   0xc000,
+otadata,    data, ota,      0x15000,  0x2000,
+phy_init,   data, phy,      0x17000,  0x1000,
+nvs_keys,   data, nvs_keys, 0x18000,  0x1000,   encrypted
+coredump,   data, coredump, 0x19000,  0x40000,
 ota_0,      app,  ota_0,    0x60000,  0x680000,
 ota_1,      app,  ota_1,    0x6E0000, 0x680000,
 layout,     data, nvs,      0xD60000, 0x20000,
