@@ -32,6 +32,7 @@
 #include "espos_mdns.h"
 #include "espos_n2k/candump_tcp_server.h"
 #include "espos_n2k/twai_receiver.h"
+#include "espos_n2k_api.h"
 #include "espos_n2k/twai_transmitter.h"
 #include "espos_sk.h"
 #include "espos_voice/wyoming_satellite.h"
@@ -311,6 +312,19 @@ extern "C" void app_main(void) {
   n2k_rx.start();
   n2k_tx.start();
   n2k_server.start();
+  /* GET /api/v1/n2k on the espOS server: whether the driver is up, whether
+   * anything has ever arrived, how long ago, and whether the controller is
+   * seeing bus errors. Without it a silent bus and an unplugged one are the
+   * same empty candump socket.
+   *
+   * Read `frames: 0, errors: 0` with `running: true` as "the wire is
+   * electrically quiet" -- and check the boot order first: the TWAI driver
+   * started here does not pick up a bus connected afterwards, so a panel
+   * powered before its network stays deaf until it is restarted. That order
+   * is the normal one on a boat, which makes a reboot the first thing to
+   * try rather than the last. Cause unproven, evidence in
+   * signalk-espOS/espOS#15. */
+  espos_n2k_api_register(&n2k_rx);
 
   // ---- the layout push API (designer) on its own port + mDNS
   int32_t api_port = 8081;

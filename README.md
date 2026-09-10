@@ -26,7 +26,11 @@ The UI is **runtime-loadable**: instead of rebuilding firmware per layout change
 - **Per-widget colors** — optional `bg_color` / `fg_color` overrides (zone state still wins for alarm cases).
 - **Configurable font size** on `label` / `value` widgets via `display.font_size`.
 - Always-on status overlay (WiFi, SK WS, N2K rx age, heap, uptime) survives every layout swap.
-- **NMEA 2000 gateway** — TWAI receiver/transmitter plus a candump-style TCP server (port 2599) so the bus is reachable from a laptop.
+- **NMEA 2000 gateway** — TWAI receiver/transmitter plus a candump-style TCP server (port 2599) so the bus is reachable from a laptop. `GET /api/v1/n2k` says what the bus is doing without a serial cable.
+
+  **If the bus is silent, reboot the panel first.** The TWAI driver starts at boot and does not pick up a bus connected afterwards, so a panel powered before its network stays deaf until it is restarted — and it does not recover on its own, however long you wait. That order is the normal one on a boat, which makes this the common case rather than an edge one. Nothing reports it either: "never received" is deliberately not an alarm, because a panel may run with no N2K at all. Cause unproven, evidence in [signalk-espOS/espOS#15](https://github.com/signalk-espOS/espOS/issues/15).
+
+  `GET /api/v1/n2k` tells the two apart: `running: true` with `frames: 0` *and* `errors: 0` means the wire is electrically quiet — unplugged, unpowered, or the driver missed the bus. Errors climbing with no frames means the opposite: the bus is live and not being understood (`ack_err` alone = nothing else listening; `stuff_err`/`form_err` = wrong bitrate).
 - **Persistence** — successful pushes are saved to the `layout` NVS partition so the layout survives a power cycle, with a compiled-in default fallback.
 - **Boot-time fetch** from SK `applicationData` so a fresh device picks up the fleet's last-known layout.
 - mDNS-announced as `_signalk-player._tcp` so designers can discover it.
@@ -77,6 +81,7 @@ If a pushed or fetched layout fails parse/validate/build, the previous layout st
 | 8081 | POST   | `/screen`       | Select the active screen by `screens[].id` (remote tab tap) |
 | 8081 | GET    | `/healthz`      | Liveness probe                                |
 | 80   | *      | `/`, `/api/v1/…` | espOS web UI + REST API (config, WiFi, SignalK, OTA, logs, core dump) |
+| 80   | GET    | `/api/v1/n2k`   | CAN bus diagnostics: `running`, `ever_received`, `idle_s`, frames, dropped, errors, bus_off, decoded last-error flags |
 | 2599 | TCP    | (candump)       | Stream raw N2K frames in candump format       |
 | 10700| TCP    | (wyoming)       | Voice satellite: the orchestrator dials in    |
 
