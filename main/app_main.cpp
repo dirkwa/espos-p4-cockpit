@@ -318,14 +318,12 @@ extern "C" void app_main(void) {
    * same empty candump socket.
    *
    * Read `frames: 0, errors: 0` with `running: true` as "the wire is
-   * electrically quiet", and check the obvious cause FIRST: the TWAI driver
-   * started here at boot does not pick up a bus that is connected
-   * afterwards. Observed 2026-09-10 -- the panel sat at frames: 0 for
-   * 18 minutes after the bus was rewired and then took 15346 frames within
-   * seconds of a reboot. So on a boat, where the panel is routinely powered
-   * before the network it listens to, a reboot is the first thing to try and
-   * not the last. Whether that is IDF's driver or espos_n2k's start path is
-   * unproven (signalk-espOS/espOS#15). */
+   * electrically quiet" -- and check the boot order first: the TWAI driver
+   * started here does not pick up a bus connected afterwards, so a panel
+   * powered before its network stays deaf until it is restarted. That order
+   * is the normal one on a boat, which makes a reboot the first thing to
+   * try rather than the last. Cause unproven, evidence in
+   * signalk-espOS/espOS#15. */
   espos_n2k_api_register(&n2k_rx);
 
   // ---- the layout push API (designer) on its own port + mDNS
