@@ -98,15 +98,15 @@ void WaveshareXDisplay::init() {
   // draw_bitmap() only queues the copy; without waiting for this callback the
   // source is reused mid-transfer and the panel shows torn strips.
   trans_done_ = xSemaphoreCreateBinary();
+  ESP_ERROR_CHECK(trans_done_ ? ESP_OK : ESP_ERR_NO_MEM);
   esp_lcd_dpi_panel_event_callbacks_t cbs = {};
   cbs.on_color_trans_done = trans_done_isr;
   ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(panel_, &cbs, trans_done_));
   ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
   ESP_ERROR_CHECK(esp_lcd_panel_init(panel_));
   ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
-  ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel_, kNumBuffers, &framebuffers_[0], &framebuffers_[1]));
+  ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel_, kNumBuffers, &framebuffers_[0]));
   memset(framebuffers_[0], 0, kBufferSize);
-  memset(framebuffers_[1], 0, kBufferSize);
 
   // PPA does the 90-degree rotation in hardware. A software rotate of a
   // 1280x720 RGB565 frame is ~1.8 MB of strided single-pixel copies per
@@ -166,8 +166,8 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
   op.rotation_angle = PPA_SRM_ROTATION_ANGLE_90;
   op.scale_x = 1.0f;
   op.scale_y = 1.0f;
-  // Blocking keeps this correct while the path is new: the rotation is done
-  // before draw_bitmap is told to send it. Revisit only with the panel lit.
+  // Blocking: the rotation must be complete before draw_bitmap sends the
+  // frame buffer to the panel, or the DSI scans out a half-rotated frame.
   op.mode = PPA_TRANS_MODE_BLOCKING;
 
   esp_err_t err = ppa_do_scale_rotate_mirror(ppa_, &op);

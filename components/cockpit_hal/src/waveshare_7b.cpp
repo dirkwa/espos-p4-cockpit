@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
 #include "sdkconfig.h"
-#if !CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
+#if CONFIG_COCKPIT_BOARD_WAVESHARE_7B
 
 #include "cockpit_hal/waveshare_7b.h"
 #include "cockpit_hal/i2c_bus.h"

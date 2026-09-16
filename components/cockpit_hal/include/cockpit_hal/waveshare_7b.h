@@ -6,7 +6,7 @@
 #pragma once
 
 #include "sdkconfig.h"
-#if !CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
+#if CONFIG_COCKPIT_BOARD_WAVESHARE_7B
 
 #include "cockpit_hal/display_driver.h"
 #include "esp_lcd_mipi_dsi.h"
@@ -58,4 +58,4 @@ class Waveshare7BTouch : public TouchDriver {
 
 }  // namespace cockpit_hal
 
-#endif  // !CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
+#endif  // CONFIG_COCKPIT_BOARD_WAVESHARE_7B

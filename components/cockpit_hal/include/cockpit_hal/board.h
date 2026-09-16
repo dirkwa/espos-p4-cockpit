@@ -14,8 +14,10 @@
 
 #if CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
 #include "cockpit_hal/waveshare_lcd_x.h"
-#else
+#elif CONFIG_COCKPIT_BOARD_WAVESHARE_7B
 #include "cockpit_hal/waveshare_7b.h"
+#else
+#error "No panel board selected: set CONFIG_COCKPIT_BOARD_* (menuconfig -> Cockpit hardware -> Panel board)"
 #endif
 
 namespace cockpit_hal {
@@ -26,7 +28,7 @@ using BoardTouch = WaveshareXTouch;
 /// The X panel is portrait and is rotated to landscape inside the driver,
 /// so the UI layer must not apply any rotation of its own.
 #define COCKPIT_UI_ROTATE_180 0
-#else
+#elif CONFIG_COCKPIT_BOARD_WAVESHARE_7B
 using BoardDisplay = Waveshare7BDisplay;
 using BoardTouch = Waveshare7BTouch;
 /// The 7B is mounted upside down; the UI layer rotates each flushed strip.

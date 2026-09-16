@@ -43,7 +43,12 @@ class WaveshareXDisplay : public DisplayDriver {
   static constexpr uint16_t kWidth = kPanelHeight;   // 1280
   static constexpr uint16_t kHeight = kPanelWidth;   // 720
   static constexpr int kBytesPerPixel = 2;
-  static constexpr int kNumBuffers = 2;
+  // ONE frame buffer: unlike the 7B, LVGL does not render into the DPI frame
+  // buffer here -- it renders into its own PSRAM buffers and every flush is
+  // rotated into this one by the PPA. A second frame buffer would be handed
+  // out by the DPI driver and never written, and PPA writing one while the
+  // DSI scans out the other is exactly the tearing this avoids.
+  static constexpr int kNumBuffers = 1;
   static constexpr size_t kBufferSize = kPanelWidth * kPanelHeight * kBytesPerPixel;
 
   void init() override;
