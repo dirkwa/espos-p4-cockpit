@@ -152,7 +152,7 @@ wins at runtime.
 ## Build / flash / debug
 
 ```bash
-. ~/esp-idf-v6.0.2/export.sh           # the version in .idf-version
+. ~/esp-idf-v6.0.3/export.sh           # the version in .idf-version
 scripts/build.sh -DIDF_TARGET=esp32p4  # → espos/scripts/build.sh: locked, nice'd, capped ninja
 scripts/build.sh -p /dev/ttyACM0 flash monitor
 curl -sf http://<device-ip>:8081/hello | jq .

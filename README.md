@@ -159,7 +159,7 @@ pins). No PlatformIO, no Arduino.
 
 ```bash
 git clone --recursive https://github.com/dirkwa/espos-p4-cockpit   # espos/ is a submodule
-. ~/esp-idf-v6.0.2/export.sh                                          # or wherever that IDF lives
+. ~/esp-idf-v6.0.3/export.sh                                          # or wherever that IDF lives
 scripts/build.sh -DIDF_TARGET=esp32p4      # first build sets the target
 scripts/build.sh                           # afterwards
 scripts/build.sh -p /dev/ttyACM0 flash monitor

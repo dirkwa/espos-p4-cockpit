@@ -4,7 +4,7 @@
 # SignalK discovery/token/stream and REST client, mDNS, the health watchdog
 # and signed OTA come from the espOS submodule (espos/); this project adds
 # the display HAL, LVGL, audio/voice, the N2K gateway and the JSON Layout
-# Player. Build:  . <ESP-IDF 6.0.2>/export.sh; scripts/build.sh -DIDF_TARGET=esp32p4
+# Player. Build:  . <ESP-IDF 6.0.3>/export.sh; scripts/build.sh -DIDF_TARGET=esp32p4
 cmake_minimum_required(VERSION 3.22)
 
 # The IDF version pin, espos/components on EXTRA_COMPONENT_DIRS, the sdkconfig
