@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
+#include "sdkconfig.h"
+#if !CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
+
 #include "cockpit_hal/waveshare_7b.h"
 #include "cockpit_hal/i2c_bus.h"
 
@@ -217,3 +220,5 @@ TouchDriver::TouchPoint Waveshare7BTouch::read() {
 }
 
 }  // namespace cockpit_hal
+
+#endif  // CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7

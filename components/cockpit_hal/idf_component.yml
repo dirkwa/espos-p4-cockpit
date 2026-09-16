@@ -1,3 +1,8 @@
 dependencies:
   lvgl/lvgl: "^9.3.0"
   espressif/esp_codec_dev: "^1.6.2"
+  # Panel driver for the Waveshare Touch-LCD-X 7" (CONFIG_COCKPIT_BOARD_
+  # WAVESHARE_LCD_X_7). Waveshare's own namespace, as used by their BSP; the
+  # 7B's EK79007 driver is vendored in components/ instead because it is not
+  # published. Harmless on a 7B build: unreferenced, so nothing links.
+  waveshare/esp_lcd_ili9881c: "^2.0.0"

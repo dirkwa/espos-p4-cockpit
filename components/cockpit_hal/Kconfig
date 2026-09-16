@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+menu "Cockpit hardware"
+
+choice COCKPIT_BOARD
+    prompt "Panel board"
+    default COCKPIT_BOARD_WAVESHARE_7B
+    help
+      Which Waveshare ESP32-P4 panel this firmware is built for. These boards
+      are not interchangeable at runtime: they use different display
+      controllers, resolutions, orientations and backlight/reset pins, so the
+      board must be chosen at build time. Flashing the wrong one typically
+      leaves the screen black, because the backlight GPIO of one board is
+      unconnected on the other.
+
+    config COCKPIT_BOARD_WAVESHARE_7B
+        bool "Waveshare ESP32-P4-WIFI6-Touch-LCD-7B (1024x600, EK79007)"
+        help
+          The 7B: a 1024x600 landscape EK79007 panel, backlight on GPIO 32
+          (inverted), reset on GPIO 33. Mounted upside down, so the UI layer
+          rotates 180 degrees.
+
+    config COCKPIT_BOARD_WAVESHARE_LCD_X_7
+        bool "Waveshare ESP32-P4-WIFI6-Touch-LCD-X, 7 inch (720x1280, ILI9881C)"
+        help
+          The X series 7-inch panel: a 720x1280 PORTRAIT ILI9881C, backlight
+          on GPIO 26 (not inverted), reset on GPIO 27. Presented to the
+          cockpit as a 1280x720 landscape screen, rotated in hardware by the
+          P4's PPA. The 8-inch and 10.1-inch X panels use a different
+          controller (JD9365) and are not supported yet.
+
+endchoice
+
+endmenu

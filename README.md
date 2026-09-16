@@ -1,6 +1,15 @@
 # espos-p4-cockpit
 
-ESP32-P4 firmware for the [Waveshare ESP32-P4-WIFI6-Touch-LCD-7B](https://www.waveshare.com/wiki/ESP32-P4-WIFI6-Touch-LCD-7B) — a 1024×600 capacitive-touch helm display that doubles as an NMEA 2000 ↔ SignalK gateway.
+ESP32-P4 firmware for Waveshare's capacitive-touch helm displays, which double as an NMEA 2000 ↔ SignalK gateway.
+
+| Board | Panel | Cockpit sees | Status |
+|---|---|---|---|
+| [ESP32-P4-WIFI6-Touch-LCD-7B](https://www.waveshare.com/wiki/ESP32-P4-WIFI6-Touch-LCD-7B) | 1024×600 EK79007, landscape | 1024×600 | verified |
+| [ESP32-P4-WIFI6-Touch-LCD-X](https://docs.waveshare.com/ESP32-P4-WIFI6-Touch-LCD-X/Resources-And-Documents), 7″ | 720×1280 ILI9881C, portrait | 1280×720 | verified |
+
+**Pick the board before building** — `idf.py menuconfig` → *Cockpit hardware* → *Panel board*, default 7B. The two are not interchangeable at runtime: different display controller, resolution, orientation, and backlight/reset pins. Building for the wrong one leaves the screen **black**, because each board's backlight GPIO is unconnected on the other.
+
+The X 7″ panel is physically portrait; the driver rotates it to landscape in hardware using the P4's PPA, so layouts stay landscape and rotation costs no CPU. The X series' 8″ and 10.1″ panels use a different controller (JD9365) and are not supported yet.
 
 **2.x runs on [espOS](https://github.com/dirkwa/espOS)** (pure ESP-IDF 6, no
 Arduino, no SensESP): WiFi + provisioning portal, the config store and web
@@ -15,7 +24,7 @@ The UI is **runtime-loadable**: instead of rebuilding firmware per layout change
 
 ## Capabilities
 
-- Native LVGL UI on the 7B's MIPI-DSI panel, capacitive touch.
+- Native LVGL UI on the panel's MIPI-DSI display, capacitive touch.
 - **JSON Layout Player (JLP)** — widgets driven by a JSON schema, hot-swap via `POST /layout`.
 - Built-in widget kinds: `label`, `value`, `toggle`, `arc`, `bar`, `bargroup`, `button`, `notifications`.
 - Two-way SignalK binding: widgets observe paths, taps emit SK PUTs (bool, int, float, string, notification ACK).
@@ -145,7 +154,7 @@ Layouts can opt the device into a power-save mode via the top-level `display` bl
 }
 ```
 
-Hardware note: the Waveshare 7B's GT911 touch controller's sensitivity drops sharply as soon as the LCD backlight dims, because the LCD's continued sync signals dominate the touch sensing layer. **Tap-wake is only reliable at brightnesses close to full.** The 80 % default reads as clearly "asleep" while keeping tap-wake working. Lower dim levels save more power but only notifications and fresh layout pushes will then wake the panel.
+Hardware note (7B): the Waveshare 7B's GT911 touch controller's sensitivity drops sharply as soon as the LCD backlight dims, because the LCD's continued sync signals dominate the touch sensing layer. **Tap-wake is only reliable at brightnesses close to full.** The 80 % default reads as clearly "asleep" while keeping tap-wake working. Lower dim levels save more power but only notifications and fresh layout pushes will then wake the panel.
 
 Wake sources:
 - any touch (always, but only effective at high `idle_dim_pct`)

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
 #include "cockpit_hal/ui.h"
+#include "cockpit_hal/board.h"
 
 #include <deque>
 #include <map>
@@ -34,9 +35,13 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   if (s_display) {
     int w = area->x2 - area->x1 + 1;
     int h = area->y2 - area->y1 + 1;
+#if COCKPIT_UI_ROTATE_180
     int disp_w = s_display->width();
     int disp_h = s_display->height();
-    // The panel is mounted upside down: rotate the strip 180° in place.
+    // This panel is mounted upside down: rotate the strip 180° in place.
+    // Boards whose driver handles orientation itself (the LCD-X rotates to
+    // landscape in hardware) must NOT get this on top -- hence the guard,
+    // not an unconditional flip.
     uint16_t* px = reinterpret_cast<uint16_t*>(px_map);
     int total = w * h;
     for (int i = 0; i < total / 2; i++) {
@@ -45,6 +50,9 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
       px[total - 1 - i] = t;
     }
     s_display->flush(disp_w - (area->x1 + w), disp_h - (area->y1 + h), w, h, px_map);
+#else
+    s_display->flush(area->x1, area->y1, w, h, px_map);
+#endif
     // draw_bitmap is asynchronous: hold the buffer until the DMA copy is done.
     s_display->wait_flush_done();
   }

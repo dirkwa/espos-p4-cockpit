@@ -22,7 +22,7 @@
 #include "freertos/task.h"
 
 #include "cockpit_hal/ui.h"
-#include "cockpit_hal/waveshare_7b.h"
+#include "cockpit_hal/board.h"
 #include "cockpit_hal/waveshare_audio.h"
 #include "espos.h"
 #include "espos_cfg_keys.h"
@@ -167,8 +167,8 @@ void poll_status_line() {
 // hear before the radio comes up. Runs on the main task after log + config.
 esp_err_t panel_up(void*) {
   // ---- display + LVGL first: the panel shows something within a second
-  static cockpit_hal::Waveshare7BDisplay display;
-  static cockpit_hal::Waveshare7BTouch touch;
+  static cockpit_hal::BoardDisplay display;
+  static cockpit_hal::BoardTouch touch;
   cockpit_hal::ui::start(&display, &touch);
   {
     int32_t pct = 95;
