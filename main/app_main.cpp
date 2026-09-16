@@ -10,6 +10,7 @@
  * Player (jlp/) with its layout push API on :8081, the NMEA 2000 gateway
  * and the status/alert overlays.
  */
+#include <cstring>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -174,7 +175,26 @@ esp_err_t panel_up(void*) {
     int32_t pct = 95;
     espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS, &pct);
     display.set_brightness((uint8_t)pct);
+    // The dimmer restores this value on every wake, so it has to know it;
+    // otherwise its own default would undo the setting on the next touch.
+    jlp::idle_dimmer().set_on_brightness((uint8_t)pct);
   }
+
+  // Apply cockpit.brightness the moment it is written, rather than only at
+  // the next boot: the setting is what a user reaches for when the panel is
+  // too dim to read, and needing a reboot to see it makes it feel broken.
+  espos_config_subscribe(
+      [](const char* ns, const char* key, void*) {
+        if (strcmp(ns, ESPOS_CFG_NS_COCKPIT) != 0) return;
+        if (strcmp(key, ESPOS_CFG_COCKPIT_BRIGHTNESS) != 0) return;
+        int32_t pct = 95;
+        espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS, &pct);
+        // Runs on the writer's task (the httpd handler), so the hardware
+        // touch goes through the dimmer, which owns the backlight and is
+        // the only thing that may set it.
+        jlp::idle_dimmer().set_on_brightness((uint8_t)pct);
+      },
+      nullptr);
 
   // Panel speaker + mics (ES8311 + NS4150B, ES7210). Same hardware on 7B
   // and 4B. Drives the alert chime and the voice satellite. Must come

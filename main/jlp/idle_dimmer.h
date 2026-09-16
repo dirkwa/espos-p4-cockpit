@@ -28,6 +28,13 @@ class IdleDimmer {
   // notification deltas and layout pushes.
   void wake();
 
+  // The brightness used while awake. Follows the `cockpit.brightness`
+  // setting: without this the dimmer would restore its own hardcoded
+  // default on the next wake and undo a brightness the user just set.
+  // Applies immediately when the panel is currently on.
+  void set_on_brightness(uint8_t pct);
+  uint8_t on_brightness() const { return on_brightness_pct_; }
+
   bool is_on() const { return on_; }
   uint32_t idle_timeout_sec() const { return idle_timeout_sec_; }
   uint8_t dim_pct() const { return dim_pct_; }
@@ -36,7 +43,7 @@ class IdleDimmer {
   void set_on(bool on);
 
   uint32_t idle_timeout_sec_ = 0;   // 0 = disabled
-  uint8_t on_brightness_pct_ = 95;  // matches init_backlight()
+  uint8_t on_brightness_pct_ = 95;  // overwritten from config at boot
   // 0 = fully off by default. Once the wake overlay covers the layout
   // the user can't accidentally trigger anything underneath, and the
   // GT911 still detects the first tap fine through the dark panel

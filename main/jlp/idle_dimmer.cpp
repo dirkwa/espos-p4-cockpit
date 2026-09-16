@@ -33,6 +33,16 @@ void IdleDimmer::set_on(bool on) {
            (unsigned)(on ? on_brightness_pct_ : dim_pct_));
 }
 
+void IdleDimmer::set_on_brightness(uint8_t pct) {
+  on_brightness_pct_ = pct;
+  // Only touch the hardware if the panel is awake; while dimmed the dim
+  // level is what belongs on screen, and the new value takes effect on the
+  // next wake.
+  if (!on_) return;
+  auto* d = cockpit_hal::ui::display();
+  if (d) d->set_brightness(pct);
+}
+
 void IdleDimmer::init() {
   // LVGL tracks input inactivity automatically. Poll on a 1 Hz cadence
   // — finer resolution is wasteful for human-scale timeouts.
