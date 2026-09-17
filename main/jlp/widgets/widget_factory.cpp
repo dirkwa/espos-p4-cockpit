@@ -428,6 +428,13 @@ bool parse_hex_color(const char* s, uint32_t* out) {
   return true;
 }
 
+ThemeColors current_theme() { return ThemeColors{kFgHex, kAccentHex}; }
+
+void restore_theme(const ThemeColors& t) {
+  kFgHex = t.fg;
+  kAccentHex = t.accent;
+}
+
 void apply_theme(JsonObjectConst theme) {
   // Reset to firmware defaults first so a layout that omits `theme`
   // (or a field of it) doesn't inherit the previous layout's colors.
