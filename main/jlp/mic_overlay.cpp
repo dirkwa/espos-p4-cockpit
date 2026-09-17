@@ -28,10 +28,10 @@ void MicOverlay::init() {
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root_, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root_, false);
   // Purely informational: never eat a touch meant for the layout beneath.
-  lv_obj_clear_flag(root_, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_clickable(root_, false);
+  lv_obj_set_hidden(root_, true);
 
   auto plain = [](lv_obj_t* o, uint32_t colour, int radius) {
     lv_obj_set_style_bg_color(o, lv_color_hex(colour), LV_PART_MAIN);
@@ -41,8 +41,8 @@ void MicOverlay::init() {
     lv_obj_set_style_outline_width(o, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(o, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(o, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(o, false);
+    lv_obj_set_clickable(o, false);
   };
 
   constexpr uint32_t kInk = 0xe6edf3;  // the mic itself
@@ -109,13 +109,13 @@ void MicOverlay::set_visible(bool on) {
   if (!root_) return;
   if (on != visible_) {
     if (on) {
-      lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_set_hidden(root_, false);
       // Layout swaps re-parent the widget tree under the screen, so re-assert
       // z-order on every show. The alert overlay calls move_foreground when it
       // pops, so an alarm still covers this.
       lv_obj_move_foreground(root_);
     } else {
-      lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_set_hidden(root_, true);
     }
     visible_ = on;
     pulse_ = 0;

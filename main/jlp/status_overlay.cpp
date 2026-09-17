@@ -34,7 +34,7 @@ void StatusOverlay::init() {
   lv_obj_set_flex_flow(strip_, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(strip_, LV_FLEX_ALIGN_SPACE_BETWEEN,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_clear_flag(strip_, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(strip_, false);
 
   lbl_host_ = make_label(strip_, "host:?");
   lbl_wifi_ = make_label(strip_, "wifi:?");
@@ -51,7 +51,7 @@ void StatusOverlay::init() {
   lv_obj_set_style_border_width(content_root_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(content_root_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(content_root_, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(content_root_, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(content_root_, false);
 
   // Connection-lost banner: a full-width red bar pinned to the bottom,
   // parented to the SCREEN (not the strip) so it shows even when a
@@ -67,8 +67,8 @@ void StatusOverlay::init() {
   lv_obj_set_style_border_width(sk_lost_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(sk_lost_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(sk_lost_, 4, LV_PART_MAIN);
-  lv_obj_clear_flag(sk_lost_, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(sk_lost_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_scrollable(sk_lost_, false);
+  lv_obj_set_hidden(sk_lost_, true);
   sk_lost_lbl_ = lv_label_create(sk_lost_);
   lv_obj_set_style_text_color(sk_lost_lbl_, lv_color_hex(0xffffff),
                               LV_PART_MAIN);
@@ -108,12 +108,12 @@ void StatusOverlay::show_sk_lost() {
   }
   // Keep above the live content even after layout swaps reparent it.
   lv_obj_move_foreground(sk_lost_);
-  lv_obj_clear_flag(sk_lost_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(sk_lost_, false);
 }
 
 void StatusOverlay::hide_sk_lost() {
   if (!sk_lost_) return;
-  lv_obj_add_flag(sk_lost_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(sk_lost_, true);
 }
 
 void StatusOverlay::set_n2k(int64_t rx_idle_seconds, unsigned clients) {
@@ -137,11 +137,11 @@ void StatusOverlay::set_visible(bool visible) {
   visible_ = visible;
   if (!strip_ || !content_root_) return;
   if (visible) {
-    lv_obj_clear_flag(strip_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(strip_, false);
     lv_obj_set_size(content_root_, LV_HOR_RES, LV_VER_RES - kStripHeight);
     lv_obj_align(content_root_, LV_ALIGN_TOP_MID, 0, kStripHeight);
   } else {
-    lv_obj_add_flag(strip_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(strip_, true);
     lv_obj_set_size(content_root_, LV_HOR_RES, LV_VER_RES);
     lv_obj_align(content_root_, LV_ALIGN_TOP_MID, 0, 0);
   }

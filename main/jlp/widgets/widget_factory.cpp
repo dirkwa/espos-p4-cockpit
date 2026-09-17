@@ -194,7 +194,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 4, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
@@ -319,7 +319,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 6, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
@@ -454,7 +454,7 @@ lv_obj_t* build_audio_mute_toggle(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   const char* caption = spec["label"] | "MUTE CHIME";
   lv_obj_t* l = lv_label_create(root);
@@ -498,7 +498,7 @@ lv_obj_t* make_local_toggle(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   const char* caption = spec["label"] | default_caption;
   lv_obj_t* l = lv_label_create(root);
@@ -584,7 +584,7 @@ lv_obj_t* build_volume(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   const char* caption = spec["label"] | "VOLUME";
   lv_obj_t* l = lv_label_create(root);
@@ -664,7 +664,7 @@ lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   const char* caption = spec["label"] | (const char*)nullptr;
   if (caption) {
@@ -767,7 +767,7 @@ lv_obj_t* build_toggle(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   // Inline layout: caption flushed left and vertically centered,
   // switch flushed right and vertically centered. Switch takes a
@@ -905,7 +905,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_outline_pad(root, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   // Arcs are circular: take min(w,h) so they stay round regardless of
   // the user's bounding box. Extra width/height becomes empty space
@@ -956,7 +956,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       // Zero the indicator — we only want the bg ring visible.
       lv_arc_set_angles(band, ang0 % 360, ang0 % 360);
       lv_obj_remove_style(band, NULL, LV_PART_KNOB);
-      lv_obj_clear_flag(band, LV_OBJ_FLAG_CLICKABLE);
+      lv_obj_set_clickable(band, false);
       lv_obj_set_style_arc_color(band, lv_color_hex(color), LV_PART_MAIN);
       lv_obj_set_style_arc_width(band, 4, LV_PART_MAIN);
     }
@@ -1010,7 +1010,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_bg_angles(arc, sa, ea);
   lv_arc_set_angles(arc, sa, sa);
   lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
-  lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_clickable(arc, false);
   lv_obj_set_style_arc_color(arc, lv_color_hex(0x30363d), LV_PART_MAIN);
   lv_obj_set_style_arc_color(arc, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
   // Pin the arc track + indicator width to ~8% of the arc side so the
@@ -1109,7 +1109,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   bool vertical = spec["vertical"] | false;
 
@@ -1228,7 +1228,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   // Group caption flushed top-left.
   const char* caption = spec["label"] | (const char*)nullptr;
@@ -1571,7 +1571,7 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   lv_obj_t* lbl = lv_label_create(root);
   lv_obj_set_style_text_color(lbl, lv_color_hex(colors.fg), LV_PART_MAIN);
@@ -1739,7 +1739,7 @@ void list_rebuild_rows(ListCtx* lc) {
     lv_obj_set_style_shadow_width(row, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(row, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(row, 4, LV_PART_MAIN);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(row, false);
 
     uint32_t bg = lc->colors.bg;
     if (!lc->row_color_field.empty()) {
@@ -1793,7 +1793,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   // Caption.
   const char* caption = spec["label"] | (const char*)nullptr;
@@ -1819,7 +1819,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_shadow_width(hdr, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(hdr, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(hdr, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(hdr, false);
 
   auto* lc = new ListCtx{};
   lc->tile = root;
@@ -1946,7 +1946,7 @@ static void anchor_render(AnchorCtx* a) {
   if (!anchor_is_watching(a)) {
     // Anchor up / no watch: dim everything, hide the needle, show a
     // placeholder instead of a stale bearing + distance.
-    lv_obj_add_flag(a->needle, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->needle, true);
     lv_arc_set_value(a->ring, 0);
     lv_obj_set_style_arc_color(a->ring, lv_color_hex(kMutedHex),
                                LV_PART_INDICATOR);
@@ -1996,10 +1996,10 @@ static void anchor_render(AnchorCtx* a) {
     a->needle_pts[1].y =
         (lv_value_precise_t)(a->cy + a->needle_len * sinf(scr));
     lv_line_set_points(a->needle, a->needle_pts, 2);
-    lv_obj_clear_flag(a->needle, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->needle, false);
   } else {
     // Anchored but no heading to reference apparentBearing against.
-    lv_obj_add_flag(a->needle, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->needle, true);
   }
 }
 
@@ -2032,7 +2032,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   int box_w = spec["w"] | 140;
   int box_h = spec["h"] | 140;
@@ -2047,7 +2047,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_bg_angles(rose, 0, 360);
   lv_arc_set_angles(rose, 0, 0);
   lv_obj_remove_style(rose, NULL, LV_PART_KNOB);
-  lv_obj_clear_flag(rose, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_clickable(rose, false);
   lv_obj_set_style_arc_color(rose, lv_color_hex(0x30363d), LV_PART_MAIN);
   lv_obj_set_style_arc_width(rose, 2, LV_PART_MAIN);
 
@@ -2061,7 +2061,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_bg_angles(ring, 135, 45);
   lv_arc_set_angles(ring, 135, 135);
   lv_obj_remove_style(ring, NULL, LV_PART_KNOB);
-  lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_clickable(ring, false);
   lv_obj_set_style_arc_color(ring, lv_color_hex(0x30363d), LV_PART_MAIN);
   lv_obj_set_style_arc_width(ring, side / 14, LV_PART_MAIN);
   lv_obj_set_style_arc_width(ring, side / 14, LV_PART_INDICATOR);
@@ -2235,7 +2235,7 @@ static lv_point_precise_t anchor_track_xy(const AnchorTrackCtx* a, float frac) {
 static void anchor_track_redraw(AnchorTrackCtx* a) {
   if (!anchor_track_watching(a) || a->count < 2) {
     for (int b = 0; b < kTrackBands; ++b)
-      lv_obj_add_flag(a->bands[b], LV_OBJ_FLAG_HIDDEN);
+      lv_obj_set_hidden(a->bands[b], true);
     return;
   }
   int n = a->count;
@@ -2248,18 +2248,18 @@ static void anchor_track_redraw(AnchorTrackCtx* a) {
     int hi = (int)((long)(b + 1) * n / kTrackBands);
     if (lo > 0) lo -= 1;                  // overlap for continuity (never < 0)
     int len = hi - lo;
-    if (len < 2) { lv_obj_add_flag(a->bands[b], LV_OBJ_FLAG_HIDDEN); continue; }
+    if (len < 2) { lv_obj_set_hidden(a->bands[b], true); continue; }
     lv_line_set_points(a->bands[b], &a->ordered[lo], len);
     lv_opa_t opa = (lv_opa_t)(LV_OPA_20 +
                               (LV_OPA_COVER - LV_OPA_20) * b / (kTrackBands - 1));
     lv_obj_set_style_line_opa(a->bands[b], opa, LV_PART_MAIN);
-    lv_obj_clear_flag(a->bands[b], LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->bands[b], false);
   }
 }
 
 static void anchor_track_render(AnchorTrackCtx* a) {
   if (!anchor_track_watching(a)) {
-    lv_obj_add_flag(a->boat, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->boat, true);
     lv_label_set_text(a->caption, "ANCHOR UP");
     lv_label_set_text(a->chain, "");
     lv_obj_set_style_border_color(a->zone, lv_color_hex(0x30363d), LV_PART_MAIN);
@@ -2303,9 +2303,9 @@ static void anchor_track_render(AnchorTrackCtx* a) {
     lv_obj_set_style_bg_color(a->boat,
                               lv_color_hex(anchor_ring_color(a->cur_m, a->max_m)),
                               LV_PART_MAIN);
-    lv_obj_clear_flag(a->boat, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->boat, false);
   } else {
-    lv_obj_add_flag(a->boat, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(a->boat, true);
   }
   anchor_track_redraw(a);
 }
@@ -2355,7 +2355,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   int box_w = spec["w"] | 140;
   int box_h = spec["h"] | 140;
@@ -2375,7 +2375,8 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_border_width(zone, 2, LV_PART_MAIN);
   lv_obj_set_style_outline_width(zone, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(zone, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(zone, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+  lv_obj_set_clickable(zone, false);
+  lv_obj_set_scrollable(zone, false);
 
   // Anchor mark at centre (small filled dot).
   int anchor_d = side / 16; if (anchor_d < 4) anchor_d = 4;
@@ -2387,7 +2388,8 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_border_width(mark, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_width(mark, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(mark, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(mark, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+  lv_obj_set_clickable(mark, false);
+  lv_obj_set_scrollable(mark, false);
 
   auto* a = new AnchorTrackCtx{};
   a->zone = zone;
@@ -2408,7 +2410,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
     lv_obj_set_style_line_color(ln, lv_color_hex(a->track_hex), LV_PART_MAIN);
     lv_obj_set_style_line_width(ln, 2, LV_PART_MAIN);
     lv_obj_set_style_line_rounded(ln, true, LV_PART_MAIN);
-    lv_obj_add_flag(ln, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ln, true);
     a->bands[b] = ln;
   }
 
@@ -2419,8 +2421,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_style_border_width(boat, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_width(boat, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(boat, 0, LV_PART_MAIN);
-  lv_obj_add_flag(boat, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(boat, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+  lv_obj_set_hidden(boat, true);
+  lv_obj_set_clickable(boat, false);
+  lv_obj_set_scrollable(boat, false);
   a->boat = boat;
 
   // Chain-out (maxRadius) label sitting on the top of the boundary ring.
@@ -2533,7 +2536,7 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 8, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   lv_obj_t* lbl = lv_label_create(root);
   lv_obj_set_style_text_color(lbl, lv_color_hex(colors.fg), LV_PART_MAIN);
@@ -2703,7 +2706,7 @@ void stream_try_start(StreamCtx* c) {
             }
             lv_image_set_src(sh->img, &sh->dsc[idx]);
             lv_obj_invalidate(sh->img);
-            if (sh->placeholder) lv_obj_add_flag(sh->placeholder, LV_OBJ_FLAG_HIDDEN);
+            if (sh->placeholder) lv_obj_set_hidden(sh->placeholder, true);
           }
           xSemaphoreGive(sh->render_sem);
         });
@@ -2729,7 +2732,7 @@ void stream_do_stop(StreamCtx* c) {
   lv_image_set_src(c->sh->img, nullptr);
   if (c->sh->placeholder) {
     lv_label_set_text(c->sh->placeholder, "connecting…");
-    lv_obj_clear_flag(c->sh->placeholder, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(c->sh->placeholder, false);
   }
 }
 
@@ -2765,10 +2768,10 @@ void stream_watch_tick(StreamCtx* c) {
   // shown, or a pause during startup/reconnect would blank the tile.
   if ((voice_busy && have_frame) ||
       (have_frame && age_ms >= 0 && age_ms < 3000)) {
-    lv_obj_add_flag(ph, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ph, true);
   } else {
     lv_label_set_text(ph, (c->started && s.connected) ? "no signal" : "connecting…");
-    lv_obj_clear_flag(ph, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ph, false);
   }
 }
 
@@ -2859,7 +2862,7 @@ lv_obj_t* build_stream(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_set_style_shadow_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root, false);
 
   auto* c = new StreamCtx();
   c->root = root;
@@ -2890,7 +2893,7 @@ lv_obj_t* build_stream(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   c->sh->placeholder = ph;
 
   if (c->touch) {
-    lv_obj_add_flag(img, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(img, true);
     lv_obj_add_event_cb(img, stream_touch_event, LV_EVENT_PRESSED, c);
     lv_obj_add_event_cb(img, stream_touch_event, LV_EVENT_PRESSING, c);
     lv_obj_add_event_cb(img, stream_touch_event, LV_EVENT_RELEASED, c);

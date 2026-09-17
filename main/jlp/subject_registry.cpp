@@ -96,6 +96,12 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
   entry->str_buf[0] = '\0';
   entry->str_prev[0] = '\0';
 
+  // NOTE: lv_subject_init_* is deprecated in LVGL 9.6 in favour of
+  // lv_subject_create(), which is NOT a drop-in: it allocates and returns a
+  // subject, whereas these initialise one this registry already owns by value
+  // inside SubjectEntry (and, for strings, whose buffers live there too).
+  // Moving to it changes the ownership and lifetime of every subject in the
+  // data-binding layer, so it is its own change rather than a rename.
   switch (kind) {
     case SubjectKind::Float:
       lv_subject_init_float(&entry->subject, 0.f);

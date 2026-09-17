@@ -45,8 +45,8 @@ struct ScreenSwitcherCtx {
 static void switcher_show(ScreenSwitcherCtx* ctx, int idx) {
   if (idx < 0 || idx >= (int)ctx->screens.size()) return;
   for (size_t i = 0; i < ctx->screens.size(); i++) {
-    if ((int)i == idx) lv_obj_clear_flag(ctx->screens[i], LV_OBJ_FLAG_HIDDEN);
-    else                lv_obj_add_flag(ctx->screens[i], LV_OBJ_FLAG_HIDDEN);
+    if ((int)i == idx) lv_obj_set_hidden(ctx->screens[i], false);
+    else                lv_obj_set_hidden(ctx->screens[i], true);
   }
   for (size_t i = 0; i < ctx->tabs.size(); i++) {
     bool a = (int)i == idx;
@@ -113,7 +113,7 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   lv_obj_set_flex_flow(strip, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(strip, LV_FLEX_ALIGN_SPACE_EVENLY,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_clear_flag(strip, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(strip, false);
 
   // Per-screen container above the strip, all sharing the same area.
   for (JsonObjectConst s : screens) {
@@ -127,7 +127,7 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_obj_set_style_bg_opa(page, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(page, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(page, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(page, false);
     sctx->screens.push_back(page);
     sctx->ids.push_back(s["id"] | "");
 
@@ -151,7 +151,7 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(btn, 4, LV_PART_MAIN);
     lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(btn, false);
 
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, title);
@@ -346,8 +346,8 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   lv_obj_set_style_border_width(staging, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(staging, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(staging, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(staging, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(staging, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_scrollable(staging, false);
+  lv_obj_set_hidden(staging, true);
 
   std::set<std::string> live_paths;
   JsonArrayConst screens = doc["screens"];
@@ -395,7 +395,7 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   idle_dimmer().configure(idle_timeout_sec, idle_dim_pct);
 
   lv_obj_t* old_root = current_root_;
-  lv_obj_clear_flag(staging, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(staging, false);
   current_root_ = staging;
   if (old_root) lv_obj_delete(old_root);
 

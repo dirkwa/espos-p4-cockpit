@@ -17,11 +17,11 @@ void WakeOverlay::init() {
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root_, 0, LV_PART_MAIN);
-  lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollable(root_, false);
   // Eat the wake tap so it doesn't fall through to the layout's
   // toggles / buttons underneath.
-  lv_obj_add_flag(root_, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_clickable(root_, true);
+  lv_obj_set_hidden(root_, true);
 
   lv_obj_t* lbl = lv_label_create(root_);
   lv_label_set_text(lbl, "TAP TO WAKE");
@@ -32,7 +32,7 @@ void WakeOverlay::init() {
 
 void WakeOverlay::show() {
   if (!root_ || visible_) return;
-  lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(root_, false);
   // Pull above any later-created siblings (layout swaps re-parent the
   // widget tree under the screen). Alert overlay still wins because
   // it calls move_foreground after us when it's enabled.
@@ -43,7 +43,7 @@ void WakeOverlay::show() {
 
 void WakeOverlay::hide() {
   if (!root_ || !visible_) return;
-  lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(root_, true);
   visible_ = false;
   ESP_LOGI(TAG, "hidden");
 }

@@ -56,7 +56,7 @@ void AlertOverlay::init() {
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(root_, 32, LV_PART_MAIN);
-  lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(root_, true);
   // Stay above future siblings (the layout tree is re-parented
   // under scr on every swap; we keep the overlay above that).
   lv_obj_move_foreground(root_);
@@ -174,20 +174,20 @@ void AlertOverlay::rebuild() {
   if (!root_) return;
   lv_obj_move_foreground(root_);  // re-pin above any newly-swapped layout
   if (!enabled_) {
-    lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(root_, true);
     current_path_.clear();
     return;
   }
   const Notification* n = notifications().most_severe();
   if (!n || n->state < min_state_) {
-    lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(root_, true);
     current_path_.clear();
     return;
   }
   // Arm the pop-under-finger guard whenever the overlay appears or moves
   // on to a different alarm — that's the moment a tap meant for the
   // widget underneath could land on ACK instead.
-  if (lv_obj_has_flag(root_, LV_OBJ_FLAG_HIDDEN) || current_path_ != n->path) {
+  if (lv_obj_is_hidden(root_) || current_path_ != n->path) {
     shown_at_ = lv_tick_get();
   }
   current_path_ = n->path;
@@ -198,7 +198,7 @@ void AlertOverlay::rebuild() {
   lv_label_set_text(path_label_, n->path.c_str());
   lv_label_set_text(msg_label_, n->message.empty() ? "(no message)"
                                                    : n->message.c_str());
-  lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_hidden(root_, false);
 }
 
 AlertOverlay& alert_overlay() {
