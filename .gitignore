@@ -2,10 +2,10 @@
 .pio/
 # dependencies.lock is COMMITTED, not ignored: this is an application, and an
 # application pins its registry dependencies exactly through its lock so CI
-# builds the same binary a developer just flashed. espOS states the same rule
-# for the same reason (espos/.gitignore). Without it CI re-resolves every run
-# and can silently build against a different component set -- LVGL 9.6.0
-# landed mid-review once and broke a PR that built clean on the bench.
+# builds the same binary a developer just flashed. Without it the component
+# manager re-resolves on every run and can build against a different component
+# set than the one that was tested. espOS states the same rule for the same
+# reason (espos/.gitignore); libraries use version ranges instead.
 # Update deliberately with `idf.py update-dependencies` and commit the diff.
 
 # `pio run` regenerates these per env from sdkconfig.defaults; only the

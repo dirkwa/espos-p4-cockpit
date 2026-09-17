@@ -76,6 +76,11 @@ class WaveshareXDisplay : public DisplayDriver {
   /// may still touch it.
   void* rot_buf_ = nullptr;
   size_t rot_buf_size_ = 0;
+  /// Whether the last flush() actually queued a transfer. flush() can return
+  /// early (no PPA client, no rotation buffer, a failed rotation) and the UI
+  /// layer calls wait_flush_done() regardless, so without this every such
+  /// frame would burn the full timeout and log a warning.
+  bool transfer_queued_ = false;
   // Given by the DPI driver's on_color_trans_done callback: draw_bitmap is
   // asynchronous, so the source must stay intact until it fires.
   SemaphoreHandle_t trans_done_ = nullptr;

@@ -84,6 +84,10 @@ void Waveshare7BDisplay::init() {
   // LVGL overwrites the draw buffer mid-transfer and the panel shows
   // torn/stale strips (a periodic full-width flash).
   trans_done_ = xSemaphoreCreateBinary();
+  // Fail here rather than let a null handle reach xSemaphoreTake() on the
+  // first flush: the callback registration accepts a null user context, so
+  // boot would otherwise continue and fault in the render path instead.
+  ESP_ERROR_CHECK(trans_done_ ? ESP_OK : ESP_ERR_NO_MEM);
   esp_lcd_dpi_panel_event_callbacks_t cbs = {};
   cbs.on_color_trans_done = trans_done_isr;
   ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(panel_, &cbs, trans_done_));
@@ -103,7 +107,7 @@ void Waveshare7BDisplay::flush(int x, int y, int w, int h, const void* buf) {
   // before starting this one: otherwise the next wait_flush_done() returns
   // immediately on the PREVIOUS transfer's token and LVGL reuses the draw
   // buffer while the DSI is still reading it.
-  xSemaphoreTake(trans_done_, 0);
+  if (trans_done_) xSemaphoreTake(trans_done_, 0);
   esp_lcd_panel_draw_bitmap(panel_, x, y, x + w, y + h, buf);
 }
 

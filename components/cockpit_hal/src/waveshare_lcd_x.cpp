@@ -123,6 +123,9 @@ void WaveshareXDisplay::init() {
 void* WaveshareXDisplay::get_draw_buffer(int index) { return framebuffers_[index % kNumBuffers]; }
 
 void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
+  // Cleared up front: every early return below leaves no transfer in flight,
+  // and wait_flush_done() is called regardless of which path we took.
+  transfer_queued_ = false;
   if (!ppa_) return;
 
   // PPA reads the source by DMA and requires a cache-aligned buffer; LVGL's
@@ -182,15 +185,16 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
   // the stale token for the next wait to consume. Clearing here is ordered
   // against the give by the transfer that follows it, so a token seen by
   // wait_flush_done() can only belong to this draw_bitmap.
-  xSemaphoreTake(trans_done_, 0);
+  if (trans_done_) xSemaphoreTake(trans_done_, 0);
 
   // PPA wrote the frame buffer by DMA; push it out so the DSI reads it.
   esp_lcd_panel_draw_bitmap(panel_, op.out.block_offset_x, op.out.block_offset_y, op.out.block_offset_x + h,
                             op.out.block_offset_y + w, framebuffers_[0]);
+  transfer_queued_ = true;
 }
 
 void WaveshareXDisplay::wait_flush_done() {
-  if (!trans_done_) return;
+  if (!trans_done_ || !transfer_queued_) return;
   if (xSemaphoreTake(trans_done_, pdMS_TO_TICKS(100)) == pdTRUE) return;
   // A transfer that misses this deadline still owns the draw buffer, and
   // there is no way to cancel it, so returning here is already a compromise.

@@ -12,6 +12,12 @@
 # like any other change.
 name: Dependency drift
 
+# One run at a time: a scheduled and a manual run overlapping could both see
+# no existing issue and each create one.
+concurrency:
+  group: dependency-drift
+  cancel-in-progress: false
+
 on:
   schedule:
     # Mondays 06:00 UTC, matching the weekly Dependabot cadence.
@@ -26,7 +32,7 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
           persist-credentials: false
@@ -36,7 +42,7 @@ jobs:
         run: echo "version=$(cat .idf-version)" >> "$GITHUB_OUTPUT"
 
       - name: re-resolve dependencies
-        uses: espressif/esp-idf-ci-action@v1
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
         with:
           esp_idf_version: ${{ steps.idf.outputs.version }}
           target: esp32p4
@@ -54,26 +60,50 @@ jobs:
             exit 0
           fi
           echo "drift=true" >> "$GITHUB_OUTPUT"
-          # Only the version lines, so the issue body is readable rather than
-          # a wall of component hashes.
+          # Version lines keep the issue readable. A component can also be
+          # REPUBLISHED at the same version, which moves only component_hash --
+          # reporting that as an empty list would read like a bug, so say what
+          # it is instead.
+          summary=$(git diff -U0 -- dependencies.lock \
+            | grep -E '^[+-] +version:|^[+-] +[a-z0-9_]+/[a-z0-9_-]+:' \
+            | grep -v '^[+-][+-]' || true)
+          if [ -z "$summary" ]; then
+            summary=$(git diff -U0 -- dependencies.lock \
+              | grep -E '^[+-] +component_hash:' | grep -v '^[+-][+-]' || true)
+            if [ -n "$summary" ]; then
+              echo "kind=hash" >> "$GITHUB_OUTPUT"
+            else
+              # Something else in the lock moved (manifest_hash alone, say).
+              summary=$(git diff -U0 -- dependencies.lock | head -40)
+              echo "kind=other" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "kind=version" >> "$GITHUB_OUTPUT"
+          fi
           {
             echo 'changed<<EOF'
-            git diff -U0 -- dependencies.lock \
-              | grep -E '^[+-] +version:|^[+-] +[a-z0-9_]+/[a-z0-9_-]+:' \
-              | grep -v '^[+-][+-]' || true
+            echo "$summary"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
           git --no-pager diff -- dependencies.lock
 
       - name: open or update an issue
         if: steps.diff.outputs.drift == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const title = 'Component versions have drifted from dependencies.lock'
+            const kind = '${{ steps.diff.outputs.kind }}'
+            const lede = kind === 'hash'
+              ? 'A component was **republished at the same version**: only its '
+                + 'content hash moved. Worth a look before taking it.'
+              : kind === 'other'
+              ? 'The lock changed in a way that is neither a version nor a hash '
+                + 'move; the raw diff is below.'
+              : 'Re-resolving within the ranges in the manifests produced a '
+                + 'different `dependencies.lock`, so newer components are available.'
             const body = [
-              'Re-resolving within the ranges in the manifests produced a different',
-              '`dependencies.lock`, so newer components are available.',
+              lede,
               '',
               'Changed entries:',
               '',
