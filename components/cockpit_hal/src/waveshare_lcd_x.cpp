@@ -187,9 +187,16 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
   // wait_flush_done() can only belong to this draw_bitmap.
   if (trans_done_) xSemaphoreTake(trans_done_, 0);
 
-  // PPA wrote the frame buffer by DMA; push it out so the DSI reads it.
-  esp_lcd_panel_draw_bitmap(panel_, op.out.block_offset_x, op.out.block_offset_y, op.out.block_offset_x + h,
-                            op.out.block_offset_y + w, framebuffers_[0]);
+  // PPA wrote the frame buffer by DMA; push it out so the DSI reads it. Only
+  // a submission that succeeded will raise the completion interrupt, so a
+  // failure here must leave transfer_queued_ false rather than have
+  // wait_flush_done() block for a callback that cannot come.
+  esp_err_t tx = esp_lcd_panel_draw_bitmap(panel_, op.out.block_offset_x, op.out.block_offset_y,
+                                           op.out.block_offset_x + h, op.out.block_offset_y + w, framebuffers_[0]);
+  if (tx != ESP_OK) {
+    ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(tx));
+    return;
+  }
   transfer_queued_ = true;
 }
 

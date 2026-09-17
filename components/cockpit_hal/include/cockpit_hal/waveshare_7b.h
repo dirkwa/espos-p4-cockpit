@@ -42,6 +42,10 @@ class Waveshare7BDisplay : public DisplayDriver {
   esp_lcd_panel_io_handle_t dbi_io_ = nullptr;
   esp_lcd_panel_handle_t panel_ = nullptr;
   void* framebuffers_[kNumBuffers] = {};
+  /// Whether the last flush() actually queued a transfer. A failed
+  /// submission raises no completion interrupt, and the UI layer calls
+  /// wait_flush_done() regardless.
+  bool transfer_queued_ = false;
   // Given by the DPI driver's on_color_trans_done callback: draw_bitmap is
   // asynchronous, so LVGL must not reuse the draw buffer until it fires.
   SemaphoreHandle_t trans_done_ = nullptr;

@@ -108,11 +108,15 @@ void Waveshare7BDisplay::flush(int x, int y, int w, int h, const void* buf) {
   // immediately on the PREVIOUS transfer's token and LVGL reuses the draw
   // buffer while the DSI is still reading it.
   if (trans_done_) xSemaphoreTake(trans_done_, 0);
-  esp_lcd_panel_draw_bitmap(panel_, x, y, x + w, y + h, buf);
+  esp_err_t tx = esp_lcd_panel_draw_bitmap(panel_, x, y, x + w, y + h, buf);
+  // A failed submission raises no completion interrupt, so waiting for one
+  // would cost the full timeout on every frame.
+  transfer_queued_ = (tx == ESP_OK);
+  if (tx != ESP_OK) ESP_LOGE(TAG, "draw_bitmap failed: %s", esp_err_to_name(tx));
 }
 
 void Waveshare7BDisplay::wait_flush_done() {
-  if (!trans_done_) return;
+  if (!trans_done_ || !transfer_queued_) return;
   if (xSemaphoreTake(trans_done_, pdMS_TO_TICKS(100)) == pdTRUE) return;
   // See flush(): the late completion is cleared there, not consumed here.
   ESP_LOGW(TAG, "flush did not complete within 100 ms");

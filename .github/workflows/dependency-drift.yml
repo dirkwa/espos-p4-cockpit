@@ -90,10 +90,17 @@ jobs:
       - name: open or update an issue
         if: steps.diff.outputs.drift == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          # Through the environment, never interpolated into the script: this
+          # is registry-derived text, and a backtick or ${...} in it would
+          # otherwise be evaluated as JavaScript in a step holding
+          # issues: write.
+          DRIFT_SUMMARY: ${{ steps.diff.outputs.changed }}
+          DRIFT_KIND: ${{ steps.diff.outputs.kind }}
         with:
           script: |
             const title = 'Component versions have drifted from dependencies.lock'
-            const kind = '${{ steps.diff.outputs.kind }}'
+            const kind = process.env.DRIFT_KIND
             const lede = kind === 'hash'
               ? 'A component was **republished at the same version**: only its '
                 + 'content hash moved. Worth a look before taking it.'
@@ -108,7 +115,7 @@ jobs:
               'Changed entries:',
               '',
               '```diff',
-              `${{ steps.diff.outputs.changed }}`,
+              process.env.DRIFT_SUMMARY ?? '',
               '```',
               '',
               'To take them: `idf.py update-dependencies`, commit the lock, and let',
