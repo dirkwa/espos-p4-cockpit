@@ -45,8 +45,7 @@ struct ScreenSwitcherCtx {
 static void switcher_show(ScreenSwitcherCtx* ctx, int idx) {
   if (idx < 0 || idx >= (int)ctx->screens.size()) return;
   for (size_t i = 0; i < ctx->screens.size(); i++) {
-    if ((int)i == idx) lv_obj_set_hidden(ctx->screens[i], false);
-    else                lv_obj_set_hidden(ctx->screens[i], true);
+    lv_obj_set_hidden(ctx->screens[i], (int)i != idx);
   }
   for (size_t i = 0; i < ctx->tabs.size(); i++) {
     bool a = (int)i == idx;

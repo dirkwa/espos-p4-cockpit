@@ -176,6 +176,14 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
     return;
   }
 
+  // Clear any completion left over from a transfer that overran its wait
+  // BEFORE starting this one. Draining after a timeout instead cannot work:
+  // the ISR may give the semaphore after the drain has already run, leaving
+  // the stale token for the next wait to consume. Clearing here is ordered
+  // against the give by the transfer that follows it, so a token seen by
+  // wait_flush_done() can only belong to this draw_bitmap.
+  xSemaphoreTake(trans_done_, 0);
+
   // PPA wrote the frame buffer by DMA; push it out so the DSI reads it.
   esp_lcd_panel_draw_bitmap(panel_, op.out.block_offset_x, op.out.block_offset_y, op.out.block_offset_x + h,
                             op.out.block_offset_y + w, framebuffers_[0]);
@@ -184,15 +192,12 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
 void WaveshareXDisplay::wait_flush_done() {
   if (!trans_done_) return;
   if (xSemaphoreTake(trans_done_, pdMS_TO_TICKS(100)) == pdTRUE) return;
-  // Timed out. The ISR may still give the semaphore afterwards, and a binary
-  // semaphore holds that token: the NEXT wait would then return immediately
-  // on a completion that belongs to THIS transfer, and flush() would rewrite
-  // the source and frame buffer while the DSI is still reading them. That is
-  // exactly the tearing this wait exists to prevent, and it would never
-  // recover on its own. Drain the stale token instead, so a missed deadline
-  // costs one late frame rather than permanent corruption.
+  // A transfer that misses this deadline still owns the draw buffer, and
+  // there is no way to cancel it, so returning here is already a compromise.
+  // What must not happen is the NEXT wait returning on THIS transfer's late
+  // completion: flush() clears the semaphore before starting a transfer, so
+  // that token is discarded rather than mistaken for the next frame's.
   ESP_LOGW(TAG, "flush did not complete within 100 ms");
-  xSemaphoreTake(trans_done_, 0);
 }
 
 void WaveshareXDisplay::init_ldo() {
