@@ -341,12 +341,31 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   lv_obj_t* staging = lv_obj_create(parent_);
   lv_obj_set_size(staging, lv_pct(100), lv_pct(100));
   lv_obj_set_pos(staging, 0, 0);
-  lv_obj_set_style_bg_opa(staging, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_border_width(staging, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(staging, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(staging, 0, LV_PART_MAIN);
   lv_obj_set_scrollable(staging, false);
   lv_obj_set_hidden(staging, true);
+
+  // Screen background: `theme.bg`, or transparent (falls through to
+  // LVGL's default dark theme) when omitted. Set on the layout root
+  // itself rather than a global screen style, so it's swapped
+  // atomically with the rest of the layout and never bleeds into the
+  // next one.
+  JsonObjectConst theme = doc["theme"];
+  uint32_t theme_bg = 0;
+  if (!theme.isNull() &&
+      parse_hex_color(theme["bg"] | (const char*)nullptr, &theme_bg)) {
+    lv_obj_set_style_bg_color(staging, lv_color_hex(theme_bg), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(staging, LV_OPA_COVER, LV_PART_MAIN);
+  } else {
+    lv_obj_set_style_bg_opa(staging, LV_OPA_TRANSP, LV_PART_MAIN);
+  }
+
+  // Default fg/accent for bars, arcs and buttons — must run before
+  // build_screens() below so newly built widgets pick up the layout's
+  // theme immediately.
+  apply_theme(theme);
 
   std::set<std::string> live_paths;
   JsonArrayConst screens = doc["screens"];

@@ -21,6 +21,21 @@ struct BuildCtx {
 // previous screen).
 lv_obj_t* build_widget(BuildCtx& ctx, JsonObjectConst spec, std::string* err);
 
+// Parse "#rrggbb" or "#rgb" into a 24-bit hex color. Returns true on
+// success; on failure (missing field, malformed) leaves *out untouched.
+// Exported so layout_manager can reuse it for the screen background,
+// which lives outside a widget spec.
+bool parse_hex_color(const char* s, uint32_t* out);
+
+// Set the default fg/accent colors used by bars, arcs, buttons and
+// other widgets when no SK zone matches and no per-widget bg_color/
+// fg_color override applies. Pass the layout's top-level `theme`
+// object; a null object (or one missing a field) resets that field to
+// the firmware default rather than carrying over the previous
+// layout's theme. Call before building widgets so the new colors take
+// effect immediately.
+void apply_theme(JsonObjectConst theme);
+
 // Tell any "stream" widgets that are direct children of `container` whether
 // their screen is visible. Streaming runs ONLY while visible; the layout
 // manager calls this from the screen switcher and after a layout swap.
