@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
  *
  * Waveshare ESP32-P4-WIFI6-Touch-LCD-X, 7" variant: a 720x1280 PORTRAIT
- * ILI9881C over MIPI-DSI (2 lanes), GT911 touch on I2C (SDA 7, SCL 8),
- * backlight PWM on GPIO 26 (non-inverted), panel reset on GPIO 27.
+ * ILI9881C over MIPI-DSI (2 lanes), GT927 touch on I2C (SDA 7, SCL 8) at
+ * address 0x14, backlight PWM on GPIO 26 (non-inverted), reset on GPIO 27.
  *
  * This is a different board from the Touch-LCD-7B, not a variant of it:
  * different controller, different resolution, different orientation and

@@ -189,10 +189,11 @@ esp_err_t panel_up(void*) {
         if (strcmp(key, ESPOS_CFG_COCKPIT_BRIGHTNESS) != 0) return;
         int32_t pct = 95;
         espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS, &pct);
-        // Runs on the writer's task (the httpd handler), so the hardware
-        // touch goes through the dimmer, which owns the backlight and is
-        // the only thing that may set it.
-        jlp::idle_dimmer().set_on_brightness((uint8_t)pct);
+        // Runs on the writer's task (the httpd handler), while the dimmer's
+        // own 1 Hz poll runs on the ui task -- so hop over there rather than
+        // touching its state from two tasks at once.
+        const auto brightness = (uint8_t)pct;
+        cockpit_hal::ui::post([brightness] { jlp::idle_dimmer().set_on_brightness(brightness); });
       },
       nullptr);
 

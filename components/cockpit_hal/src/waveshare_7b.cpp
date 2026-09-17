@@ -221,4 +221,4 @@ TouchDriver::TouchPoint Waveshare7BTouch::read() {
 
 }  // namespace cockpit_hal
 
-#endif  // CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
+#endif  // CONFIG_COCKPIT_BOARD_WAVESHARE_7B

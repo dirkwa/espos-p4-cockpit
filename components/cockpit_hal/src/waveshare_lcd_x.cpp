@@ -182,7 +182,17 @@ void WaveshareXDisplay::flush(int x, int y, int w, int h, const void* buf) {
 }
 
 void WaveshareXDisplay::wait_flush_done() {
-  if (trans_done_) xSemaphoreTake(trans_done_, pdMS_TO_TICKS(100));
+  if (!trans_done_) return;
+  if (xSemaphoreTake(trans_done_, pdMS_TO_TICKS(100)) == pdTRUE) return;
+  // Timed out. The ISR may still give the semaphore afterwards, and a binary
+  // semaphore holds that token: the NEXT wait would then return immediately
+  // on a completion that belongs to THIS transfer, and flush() would rewrite
+  // the source and frame buffer while the DSI is still reading them. That is
+  // exactly the tearing this wait exists to prevent, and it would never
+  // recover on its own. Drain the stale token instead, so a missed deadline
+  // costs one late frame rather than permanent corruption.
+  ESP_LOGW(TAG, "flush did not complete within 100 ms");
+  xSemaphoreTake(trans_done_, 0);
 }
 
 void WaveshareXDisplay::init_ldo() {
