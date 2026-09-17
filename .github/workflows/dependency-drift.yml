@@ -60,32 +60,45 @@ jobs:
             exit 0
           fi
           echo "drift=true" >> "$GITHUB_OUTPUT"
-          # Version lines keep the issue readable. A component can also be
-          # REPUBLISHED at the same version, which moves only component_hash --
-          # reporting that as an empty list would read like a bug, so say what
-          # it is instead.
-          summary=$(git diff -U0 -- dependencies.lock \
-            | grep -E '^[+-] +version:|^[+-] +[a-z0-9_]+/[a-z0-9_-]+:' \
-            | grep -v '^[+-][+-]' || true)
-          if [ -z "$summary" ]; then
-            summary=$(git diff -U0 -- dependencies.lock \
-              | grep -E '^[+-] +component_hash:' | grep -v '^[+-][+-]' || true)
-            if [ -n "$summary" ]; then
-              echo "kind=hash" >> "$GITHUB_OUTPUT"
-            else
-              # Something else in the lock moved (manifest_hash alone, say).
-              summary=$(git diff -U0 -- dependencies.lock | head -40)
-              echo "kind=other" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "kind=version" >> "$GITHUB_OUTPUT"
-          fi
-          {
-            echo 'changed<<EOF'
-            echo "$summary"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
           git --no-pager diff -- dependencies.lock
+          # Compare the two locks by dependency KEY rather than grepping the
+          # diff: a component republished at the same version moves only its
+          # component_hash, and `git diff -U0` shows those lines without the
+          # key they belong to -- a report that cannot name the component is
+          # no use in the one case it exists for.
+          git show HEAD:dependencies.lock > /tmp/lock.old
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, yaml
+
+          def deps(path):
+              with open(path) as f:
+                  return (yaml.safe_load(f) or {}).get("dependencies", {}) or {}
+
+          old, new = deps("/tmp/lock.old"), deps("dependencies.lock")
+          ver, rep, add, gone = [], [], [], []
+          for k in sorted(set(old) | set(new)):
+              o, n = old.get(k), new.get(k)
+              if o is None:
+                  add.append(f"+ {k} {n.get('version','?')}")
+              elif n is None:
+                  gone.append(f"- {k} {o.get('version','?')}")
+              elif o.get("version") != n.get("version"):
+                  ver.append(f"~ {k} {o.get('version','?')} -> {n.get('version','?')}")
+              elif o.get("component_hash") != n.get("component_hash"):
+                  rep.append(f"! {k} {n.get('version','?')} republished "
+                             f"({str(o.get('component_hash'))[:12]} -> "
+                             f"{str(n.get('component_hash'))[:12]})")
+
+          lines = ver + add + gone + rep
+          kind = "version" if (ver or add or gone) else "hash" if rep else "other"
+          if not lines:
+              lines = ["(the lock changed without any dependency entry moving,"
+                       " e.g. manifest_hash only)"]
+          print(f"kind={kind}")
+          print("changed<<EOF")
+          print("\n".join(lines))
+          print("EOF")
+          PY
 
       - name: open or update an issue
         if: steps.diff.outputs.drift == 'true'
@@ -126,11 +139,16 @@ jobs:
               '_Raised by `.github/workflows/dependency-drift.yml`; re-runs weekly._'
             ].join('\n')
 
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner, repo: context.repo.repo,
-              state: 'open', labels: 'dependencies'
-            })
-            const hit = existing.data.find(i => i.title === title)
+            // Paginate: the default page is 30, and a drift issue sitting
+            // past it would be invisible here and a duplicate filed instead.
+            const existing = await github.paginate(
+              github.rest.issues.listForRepo,
+              {
+                owner: context.repo.owner, repo: context.repo.repo,
+                state: 'open', labels: 'dependencies', per_page: 100
+              }
+            )
+            const hit = existing.find(i => i.title === title)
             if (hit) {
               await github.rest.issues.update({
                 owner: context.repo.owner, repo: context.repo.repo,
