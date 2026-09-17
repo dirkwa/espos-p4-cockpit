@@ -49,12 +49,17 @@ constexpr int32_t kBarSteps = 1000;  // LVGL bar/arc integer range
 struct Colors {
   uint32_t bg;
   uint32_t fg;
+  // Whether the spec actually carried the field, rather than inferred from
+  // the value: a spec asking for exactly the default colour is a deliberate
+  // choice and must not be treated as absent.
+  bool bg_explicit;
   bool fg_explicit;
 };
 
 Colors parse_colors(JsonObjectConst spec) {
-  Colors c{kTileBgHex, kFgHex, false};
-  parse_hex_color(spec["bg_color"] | (const char*)nullptr, &c.bg);
+  Colors c{kTileBgHex, kFgHex, false, false};
+  c.bg_explicit =
+      parse_hex_color(spec["bg_color"] | (const char*)nullptr, &c.bg);
   c.fg_explicit =
       parse_hex_color(spec["fg_color"] | (const char*)nullptr, &c.fg);
   return c;
@@ -1570,7 +1575,7 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // as an active, tappable tile by default rather than a flat
   // background tile — same accent used as the bar/arc indicator
   // fallback (see parse_colors' kTileBgHex default above).
-  if (colors.bg == kTileBgHex) colors.bg = kAccentHex;
+  if (!colors.bg_explicit) colors.bg = kAccentHex;
   const char* path = spec["bind"] | (const char*)nullptr;
   if (!path) { *err = "button: bind required"; return nullptr; }
   const char* caption = spec["label"] | "button";
