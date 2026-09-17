@@ -29,3 +29,10 @@ updates:
 # - PlatformIO lib_deps and the ESP-IDF component manager. Neither is a
 #   Dependabot ecosystem, and four of the seven lib_deps are symlink:// paths
 #   to sister repos that are meant to float with the firmware anyway.
+#
+#   The component manager is covered instead by
+#   .github/workflows/dependency-drift.yml, which re-resolves weekly against
+#   the committed dependencies.lock and raises an issue when a newer version
+#   is available. That is the half Dependabot would have done; taking the
+#   update stays manual, because a component bump changes the binary that
+#   goes on a boat.

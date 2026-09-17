@@ -1,0 +1,107 @@
+# Dependabot for ESP-IDF components, because Dependabot does not do this.
+#
+# The component manager is not a Dependabot ecosystem (see .github/dependabot.yml),
+# so nothing watches idf_component.yml or dependencies.lock. With the lock
+# committed, "has anything moved?" becomes answerable: re-resolve within the
+# ranges the manifests allow and diff the result. A changed lock means a new
+# version (or a republished component at the same version -- the lock carries
+# content hashes, so that is caught too).
+#
+# This only reports. It never updates the lock on its own: a component bump
+# changes the binary that goes on a boat, so it goes through a PR and a build
+# like any other change.
+name: Dependency drift
+
+on:
+  schedule:
+    # Mondays 06:00 UTC, matching the weekly Dependabot cadence.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: read pinned IDF version
+        id: idf
+        run: echo "version=$(cat .idf-version)" >> "$GITHUB_OUTPUT"
+
+      - name: re-resolve dependencies
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ steps.idf.outputs.version }}
+          target: esp32p4
+          # update-dependencies rewrites the lock to the newest versions the
+          # manifests permit. reconfigure alone would honour the existing lock
+          # and report nothing, which is the whole point of having one.
+          command: idf.py update-dependencies
+
+      - name: diff the lock
+        id: diff
+        run: |
+          if git diff --quiet -- dependencies.lock; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "No component drift."
+            exit 0
+          fi
+          echo "drift=true" >> "$GITHUB_OUTPUT"
+          # Only the version lines, so the issue body is readable rather than
+          # a wall of component hashes.
+          {
+            echo 'changed<<EOF'
+            git diff -U0 -- dependencies.lock \
+              | grep -E '^[+-] +version:|^[+-] +[a-z0-9_]+/[a-z0-9_-]+:' \
+              | grep -v '^[+-][+-]' || true
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          git --no-pager diff -- dependencies.lock
+
+      - name: open or update an issue
+        if: steps.diff.outputs.drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Component versions have drifted from dependencies.lock'
+            const body = [
+              'Re-resolving within the ranges in the manifests produced a different',
+              '`dependencies.lock`, so newer components are available.',
+              '',
+              'Changed entries:',
+              '',
+              '```diff',
+              `${{ steps.diff.outputs.changed }}`,
+              '```',
+              '',
+              'To take them: `idf.py update-dependencies`, commit the lock, and let',
+              'the PR build prove it. Flash the result before merging if the change',
+              'touches anything on the display or audio path -- a component bump can',
+              'alter behaviour without breaking the build.',
+              '',
+              '_Raised by `.github/workflows/dependency-drift.yml`; re-runs weekly._'
+            ].join('\n')
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'dependencies'
+            })
+            const hit = existing.data.find(i => i.title === title)
+            if (hit) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: hit.number, body
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['dependencies']
+              })
+            }

@@ -1,0 +1,497 @@
+dependencies:
+  bblanchon/arduinojson:
+    component_hash: 5e6aff2bc5bc988b36c8e90c01e637495ee895ad3af93911860c21ec6da79b6a
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 7.4.3
+  espressif/cjson:
+    component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.7.19~2
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.5.3
+  espressif/dl_fft:
+    component_hash: 3e8f7d34e04bfa6333f289a6d126745bebe0cee9311b81a6a5d106047f63ef65
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.7.0
+  espressif/eppp_link:
+    component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
+    dependencies:
+    - name: espressif/esp_serial_slave_link
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1.1.0
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.1.6
+  espressif/esp-dl:
+    component_hash: 233ee8d37dfedeb637fc74713b87bd861ac530cfbcc4c63c57c2e51064cdda31
+    dependencies:
+    - name: espressif/dl_fft
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=0.6.0'
+    - name: espressif/esp_new_jpeg
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1
+    - name: idf
+      require: private
+      version: '*'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    targets:
+    - esp32
+    - esp32c2
+    - esp32c3
+    - esp32c5
+    - esp32c6
+    - esp32p4
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    version: 3.3.11
+  espressif/esp-dsp:
+    component_hash: 12e44db246517a627bc0fe2b255b8335410c0215c98bfba2df5a8e3edea839ef
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.2'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.8.0
+  espressif/esp-sr:
+    component_hash: c3dd4d3a3ce520c90e6a48370f41ff1e138cea128929270ea03ee74e6710cea3
+    dependencies:
+    - name: espressif/cjson
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1.7.19
+    - name: espressif/dl_fft
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=0.6.0'
+    - name: espressif/esp-dl
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=3.3.10'
+    - name: espressif/esp-dsp
+      registry_url: https://components.espressif.com
+      require: private
+      version: 1.8.0
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.5.3
+  espressif/esp_codec_dev:
+    component_hash: 4779f31a3ba3f9b38aee1afe6ccb9ba8f6108dc3a6e77d39d7d714e9a215371b
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.6.2
+  espressif/esp_hosted:
+    component_hash: 8ca10092db3e8c8122540d907ab705805a269377d31192f087ba1def2f5f4f91
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.12.12
+  espressif/esp_new_jpeg:
+    component_hash: e1e7e6991193c41ed6c9fc386702aa7821433319e7aa9c3147cd3236310cd69c
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32c2
+    - esp32c3
+    - esp32c5
+    - esp32c6
+    - esp32c61
+    - esp32h4
+    version: 1.0.2
+  espressif/esp_serial_slave_link:
+    component_hash: ac1776806de0a6e371c84e87898bb983e19ce62aa7f1e2e5c4a3b0234a575d2c
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.1.2
+  espressif/esp_websocket_client:
+    component_hash: dc00233af846f3a744ada283a300e0d586040aadc3ee67361645ecdce4523672
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.8.0
+  espressif/esp_wifi_remote:
+    component_hash: 50d3beaf95c0bc47d0fcf56752beaf3cbaae981fd8c3b74d6890b45d8be689fe
+    dependencies:
+    - name: espressif/esp_hosted
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: target in [esp32h2, esp32p4]
+      version: '>=2.11'
+    - name: espressif/wifi_remote_over_eppp
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=0.1'
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.6.4
+  espressif/i2c_bus:
+    component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.5.2
+  espressif/mdns:
+    component_hash: e81ca7a7f53ea34e78274df054da692c272e1315572876b237b1748e267c013b
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.11.3
+  espressif/wifi_remote_over_eppp:
+    component_hash: 1fd6968af20f0b19e421f6b519b0a8caf81d689afc3783b564c28559e45f66ef
+    dependencies:
+    - name: espressif/eppp_link
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=0.1'
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.3.3
+  idf:
+    source:
+      type: idf
+    version: 6.0.3
+  joltwallet/littlefs:
+    component_hash: 3af20a3d75c49db9dc2286fd50862c34055c9f578419ad1f2bf7ed3ed01391fe
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.22.3
+  lvgl/lvgl:
+    component_hash: d5e723db3a3feca71e34e333a6598b7624e3822577d374e1d44f0e18374952e1
+    dependencies:
+    - name: espressif/freetype
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_FREETYPE} == True
+      version: ^2.14.3
+    - name: espressif/libjpeg-turbo
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LIBJPEG_TURBO} == True
+      version: ^3.1.1
+    - name: espressif/libpng
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LIBPNG} == True
+      version: ^1.6.58
+    - name: espressif/lz4
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LZ4} == True && $CONFIG{LV_USE_LZ4_INTERNAL} == False
+      version: ^1.10.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 9.6.0
+  signalk-espos/espos_audio:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_audio
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_config:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: espressif/cjson
+      version: ==1.7.19~2
+    source:
+      path: espos/components/espos_config
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_event:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_event
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_flow:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: signalk-espos/espos_formulas
+      override_path: ../espos_formulas
+      version: ^0.7.1
+    source:
+      path: espos/components/espos_flow
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_formulas:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_formulas
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_health:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_health
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_httpd:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: signalk-espos/espos_config
+      override_path: ../espos_config
+      version: ^0.7.1
+    - name: signalk-espos/espos_log
+      override_path: ../espos_log
+      version: ^0.7.1
+    - name: espressif/cjson
+      version: ==1.7.19~2
+    - name: joltwallet/littlefs
+      rules:
+      - if: target != linux
+      version: ==1.22.3
+    source:
+      path: espos/components/espos_httpd
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_log:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_log
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_net:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: signalk-espos/espos_config
+      override_path: ../espos_config
+      version: ^0.7.1
+    - name: signalk-espos/espos_httpd
+      override_path: ../espos_httpd
+      version: ^0.7.1
+    - name: signalk-espos/espos_event
+      override_path: ../espos_event
+      version: ^0.7.1
+    - name: espressif/cjson
+      version: ==1.7.19~2
+    - name: espressif/mdns
+      rules:
+      - if: target != linux
+      version: ==1.11.3
+    source:
+      path: espos/components/espos_net
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_sensors:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_sensors
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_sk:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: signalk-espos/espos_config
+      override_path: ../espos_config
+      version: ^0.7.1
+    - name: signalk-espos/espos_httpd
+      override_path: ../espos_httpd
+      version: ^0.7.1
+    - name: signalk-espos/espos_net
+      override_path: ../espos_net
+      version: ^0.7.1
+    - name: signalk-espos/espos_health
+      override_path: ../espos_health
+      version: ^0.7.1
+    - name: espressif/cjson
+      version: ==1.7.19~2
+    source:
+      path: espos/components/espos_sk
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_sk_flow:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    source:
+      path: espos/components/espos_sk_flow
+      type: local
+    version: 0.7.1
+  signalk-espos/espos_wifi:
+    dependencies:
+    - name: idf
+      version: '>=6.0.0,<6.1.0'
+    - name: signalk-espos/espos_config
+      override_path: ../espos_config
+      version: ^0.7.1
+    - name: signalk-espos/espos_httpd
+      override_path: ../espos_httpd
+      version: ^0.7.1
+    - name: signalk-espos/espos_net
+      override_path: ../espos_net
+      version: ^0.7.1
+    - name: espressif/cjson
+      version: ==1.7.19~2
+    - name: espressif/esp_hosted
+      rules:
+      - if: target == esp32p4
+      version: ^2.12.0
+    - name: espressif/esp_wifi_remote
+      rules:
+      - if: target == esp32p4
+      version: '*'
+    source:
+      path: espos/components/espos_wifi
+      type: local
+    version: 0.7.1
+  waveshare/esp_lcd_ili9881c:
+    component_hash: 3150ce0151872e7d2b2ad03a3ce4f3a95b3598d7786d13c6a478c6835a9b423d
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: espressif/i2c_bus
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1.3.0
+    - name: idf
+      require: private
+      version: '>=5.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32p4
+    version: 2.0.0
+direct_dependencies:
+- bblanchon/arduinojson
+- espressif/cjson
+- espressif/esp-sr
+- espressif/esp_codec_dev
+- espressif/esp_hosted
+- espressif/esp_new_jpeg
+- espressif/esp_websocket_client
+- espressif/esp_wifi_remote
+- espressif/mdns
+- idf
+- joltwallet/littlefs
+- lvgl/lvgl
+- signalk-espos/espos_audio
+- signalk-espos/espos_config
+- signalk-espos/espos_event
+- signalk-espos/espos_flow
+- signalk-espos/espos_formulas
+- signalk-espos/espos_health
+- signalk-espos/espos_httpd
+- signalk-espos/espos_log
+- signalk-espos/espos_net
+- signalk-espos/espos_sensors
+- signalk-espos/espos_sk
+- signalk-espos/espos_sk_flow
+- signalk-espos/espos_wifi
+- waveshare/esp_lcd_ili9881c
+manifest_hash: a927285b8d78465f39bc855629541067426daaf1213e6140923c7a0e90019f89
+target: esp32p4
+version: 3.0.0
