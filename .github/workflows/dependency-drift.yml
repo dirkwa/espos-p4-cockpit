@@ -68,11 +68,49 @@ jobs:
           # no use in the one case it exists for.
           git show HEAD:dependencies.lock > /tmp/lock.old
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import os, yaml
+          import os, re
+
+          # Parsed without PyYAML on purpose: the runner does not provision it
+          # for system python, and an undeclared import that only fails on the
+          # drift path would break the report exactly when it is needed. The
+          # shape here is fixed by the component manager -- a component key at
+          # two spaces, its fields at four. Nested `version:` lines belong to
+          # dependency REQUIREMENTS and sit deeper, so anchoring on the key and
+          # taking only 4-space fields keeps them out.
+          # The key is any name at two spaces -- including bare "idf", which
+          # has no namespace and whose version is worth reporting too. Matching
+          # only "ns/name" left cur pointing at the PREVIOUS component while
+          # idf's own fields overwrote it.
+          KEY = re.compile(r"^  ([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?):\s*$")
+          FIELD = re.compile(r"^    (version|component_hash):\s*(.+?)\s*$")
+          # Anything else at two spaces or less ends the current entry, so a
+          # stray line can never attach a field to the wrong component.
+          OUTDENT = re.compile(r"^ {0,2}\S")
 
           def deps(path):
-              with open(path) as f:
-                  return (yaml.safe_load(f) or {}).get("dependencies", {}) or {}
+              out, cur = {}, None
+              started = False
+              for line in open(path):
+                  line = line.rstrip("\n")
+                  if line.startswith("dependencies:"):
+                      started = True
+                      continue
+                  if not started:
+                      continue
+                  if line and not line.startswith(" "):
+                      break          # left the dependencies block
+                  m = KEY.match(line)
+                  if m:
+                      cur = m.group(1)
+                      out.setdefault(cur, {})
+                      continue
+                  m = FIELD.match(line)
+                  if m and cur:
+                      out[cur][m.group(1)] = m.group(2).strip("'\"")
+                      continue
+                  if line.strip() and OUTDENT.match(line):
+                      cur = None
+              return out
 
           old, new = deps("/tmp/lock.old"), deps("dependencies.lock")
           ver, rep, add, gone = [], [], [], []
@@ -92,8 +130,11 @@ jobs:
           lines = ver + add + gone + rep
           kind = "version" if (ver or add or gone) else "hash" if rep else "other"
           if not lines:
-              lines = ["(the lock changed without any dependency entry moving,"
-                       " e.g. manifest_hash only)"]
+              # Nothing in the dependency entries moved (manifest_hash alone,
+              # say). Carry the raw diff rather than an empty report.
+              kind = "other"
+              raw = os.popen("git diff -U0 -- dependencies.lock").read().splitlines()
+              lines = raw[:40] or ["(no textual diff available)"]
           print(f"kind={kind}")
           print("changed<<EOF")
           print("\n".join(lines))
