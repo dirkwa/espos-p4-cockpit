@@ -724,7 +724,8 @@ lv_obj_t* build_slider_shell(BuildCtx& ctx, JsonObjectConst spec,
 // at once; releasing persists through espos_config, whose change
 // callback in app_main hands the value to the idle dimmer, so the next
 // wake restores it exactly as after a config-API write. No SK path, no
-// PUT. min/max/display are ignored: the range is the setting's.
+// SignalK PUT or subscription. min/max/display are ignored: the range is
+// the setting's.
 //
 // The knob follows a "@brightness" subject rather than the setting
 // directly, so the designer's preview can feed it the connected panel's
@@ -796,6 +797,14 @@ lv_obj_t* build_brightness_slider(BuildCtx& ctx, JsonObjectConst spec,
                             LV_ANIM_OFF);
       },
       sld, nullptr);
+  // Subscribe before the snapshot: the callback reports later commits
+  // only, so a write landing between the two would otherwise go unseen
+  // until the next one.
+  static bool subscribed = false;
+  if (!subscribed) {
+    subscribed = true;
+    espos_config_subscribe(on_brightness_setting_changed, nullptr);
+  }
   lv_subject_set_float(sub, (float)brightness_setting());
 
   // Preview while dragging: the operator sees the level they are choosing
@@ -825,12 +834,6 @@ lv_obj_t* build_brightness_slider(BuildCtx& ctx, JsonObjectConst spec,
   };
   lv_obj_add_event_cb(sld, commit_brightness_cb, LV_EVENT_RELEASED, nullptr);
   lv_obj_add_event_cb(sld, commit_brightness_cb, LV_EVENT_PRESS_LOST, nullptr);
-
-  static bool subscribed = false;
-  if (!subscribed) {
-    subscribed = true;
-    espos_config_subscribe(on_brightness_setting_changed, nullptr);
-  }
   return root;
 }
 
