@@ -30,7 +30,9 @@ struct SubjectEntry {
 class SubjectRegistry {
  public:
   // Returns the subject for `path`, creating it (and its subscription)
-  // on first call. nullptr if `path` exists with a different kind.
+  // on first call. nullptr if `path` exists with a different kind. A
+  // path starting with '@' is a panel-local sentinel: it gets a subject
+  // the panel feeds itself and no SignalK subscription.
   lv_subject_t* get_or_create(const std::string& path, SubjectKind kind);
 
   lv_subject_t* lookup(const std::string& path) const;

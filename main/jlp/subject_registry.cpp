@@ -76,6 +76,13 @@ void on_update(const espos_sk_update_t* u, void* arg) {
   }
 }
 
+// Widget binds that start with '@' are local action sentinels
+// ("@brightness"): the panel feeds the subject itself, so there is
+// nothing to subscribe to on the server.
+bool is_local_sentinel(const std::string& path) {
+  return !path.empty() && path[0] == '@';
+}
+
 }  // namespace
 
 lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
@@ -122,9 +129,15 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
   // One espOS subscription per path delivers values AND meta (the stream
   // runs with sendMeta=all); it is (re)sent to the server on every
   // reconnect, and new paths bound after connect go out incrementally.
-  slot.sub_handle = espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update, slot.entry.get());
-  if (slot.sub_handle <= 0) {
-    ESP_LOGW(TAG, "subscribe %s failed (%d)", path.c_str(), slot.sub_handle);
+  // A panel-local sentinel ("@brightness") is fed by the panel itself and
+  // gets none: the server has no such path.
+  if (is_local_sentinel(path)) {
+    slot.sub_handle = 0;
+  } else {
+    slot.sub_handle = espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update, slot.entry.get());
+    if (slot.sub_handle <= 0) {
+      ESP_LOGW(TAG, "subscribe %s failed (%d)", path.c_str(), slot.sub_handle);
+    }
   }
 
   lv_subject_t* sub = &slot.entry->subject;
@@ -168,7 +181,7 @@ void SubjectRegistry::garbage_collect(
     if (!live && slot.sub_handle > 0) {
       espos_sk_unsubscribe(slot.sub_handle);
       slot.sub_handle = 0;
-    } else if (live && slot.sub_handle <= 0) {
+    } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
     }
   }
