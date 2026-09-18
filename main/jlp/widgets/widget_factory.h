@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 #include <ArduinoJson.h>
+#include <cstdint>
 #include <set>
 #include <string>
 
@@ -26,6 +27,18 @@ lv_obj_t* build_widget(BuildCtx& ctx, JsonObjectConst spec, std::string* err);
 // Exported so layout_manager can reuse it for the screen background,
 // which lives outside a widget spec.
 bool parse_hex_color(const char* s, uint32_t* out);
+
+// The theme colors currently in effect, for save/restore around a layout
+// build that may fail. apply_theme() has to run BEFORE widgets are built so
+// they pick up the new colors, but a build that fails leaves the previous
+// layout on screen -- its still-live widgets would then read the rejected
+// layout's theme on their next update.
+struct ThemeColors {
+  uint32_t fg;
+  uint32_t accent;
+};
+ThemeColors current_theme();
+void restore_theme(const ThemeColors& t);
 
 // Set the default fg/accent colors used by bars, arcs, buttons and
 // other widgets when no SK zone matches and no per-widget bg_color/

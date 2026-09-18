@@ -364,13 +364,18 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
 
   // Default fg/accent for bars, arcs and buttons — must run before
   // build_screens() below so newly built widgets pick up the layout's
-  // theme immediately.
+  // theme immediately. These are process-wide, so a build that fails
+  // has to put them back: the previous layout stays on screen, and its
+  // still-live widgets would otherwise read the REJECTED layout's theme
+  // on their next update.
+  const ThemeColors prev_theme = current_theme();
   apply_theme(theme);
 
   std::set<std::string> live_paths;
   JsonArrayConst screens = doc["screens"];
   if (!build_screens(staging, doc.as<JsonObjectConst>(), screens, registry(),
                      &r.err, &live_paths, &r.widgets)) {
+    restore_theme(prev_theme);
     lv_obj_delete(staging);
     return r;
   }
