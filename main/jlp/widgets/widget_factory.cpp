@@ -1071,8 +1071,12 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       lv_obj_set_style_line_width(tick, 2, LV_PART_MAIN);
 
       if (tick_labels) {
-        float raw_val = v_min + (v_max - v_min) * t;
-        float disp_val = raw_val * tmp_disp.scale + tmp_disp.offset;
+        // v_min/v_max are already DISPLAY-space bounds -- the band code
+        // above converts raw to display before comparing against them, and
+        // the live arc feeds scale_to_steps(display_value, min, max). So the
+        // interpolated value is the label; applying scale/offset again would
+        // transform it twice (a 0..100 arc with scale=100 would read 10000).
+        float disp_val = v_min + (v_max - v_min) * t;
         lv_obj_t* lbl = lv_label_create(root);
         lv_obj_set_style_text_color(lbl, lv_color_hex(kMutedHex),
                                      LV_PART_MAIN);
