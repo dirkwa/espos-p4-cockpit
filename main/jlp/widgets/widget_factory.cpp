@@ -956,6 +956,11 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   int total_sweep = ea - sa;
   if (total_sweep <= 0) total_sweep += 360;
 
+  // Track/indicator stroke, ~8% of the arc's diameter (see the full
+  // rationale below where it's applied). Computed early so the tick
+  // geometry below can stay clear of the ring it paints.
+  const int arc_stroke = side / 12;
+
   // ---- Bands (advisory colored ring painted UNDER the indicator).
   // Each band is its own lv_arc with no indicator and a thin track
   // styled in the band's color. Created before the indicator so the
@@ -993,14 +998,45 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
     }
   }
 
-  // ---- Tick marks (drawn via small line segments).
-  // Major ticks at evenly-spaced angles around the arc. No labels in
-  // v1 to keep the firmware light; designer can show tick numerals
-  // since SVG text is cheap on the browser.
+  lv_obj_t* arc = lv_arc_create(root);
+  lv_obj_set_size(arc, side, side);
+  lv_obj_align(arc, LV_ALIGN_CENTER, 0, 0);
+  lv_arc_set_range(arc, 0, kBarSteps);
+  lv_arc_set_bg_angles(arc, sa, ea);
+  lv_arc_set_angles(arc, sa, sa);
+  lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+  lv_obj_set_clickable(arc, false);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
+  // Pin the arc track + indicator width to ~8% of the arc side so the
+  // device matches the designer's SVG (stroke=8 in a 100-unit
+  // viewBox). LVGL 9's default theme uses a fixed ~25 px which
+  // overshadows small arcs and makes adjacent arcs visually collide
+  // even when the layout coords don't overlap.
+  lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_INDICATOR);
+  // Also lift the inactive bg arc above the bands so the bands sit
+  // visibly OUTSIDE rather than fighting the track. Re-pin the arc
+  // on top by setting it as the parent's last child via z-order:
+  lv_obj_move_foreground(arc);
+  (void)v_min; (void)v_max;  // captured by RangeBinding below
+
+  // ---- Tick marks (drawn via small line segments), created AFTER
+  // the arc and its ring so they always paint on top of it. The ring
+  // itself occupies radius [side/2 - arc_stroke, side/2] (stroke
+  // extends inward from the widget's outer edge); ticks used to sit
+  // in that same outer band (r_outer = side/2, only 6px deep) so for
+  // any arc where arc_stroke >= 6px — i.e. side >= 72px, true of every
+  // arc in practice — the opaque ring painted after them covered the
+  // tick marks completely. Ticks now sit just inside the ring's inner
+  // edge (with a couple of px of clearance) so there's no shared
+  // territory left to fight over, regardless of stroke width.
   int tick_count = spec["ticks"] | 0;
+  bool tick_labels = spec["tick_labels"] | false;
   if (tick_count > 1) {
-    float r_outer = side / 2.0f;
+    float r_outer = side / 2.0f - arc_stroke - 2.0f;
     float r_inner = r_outer - 6.0f;
+    if (r_outer < 0) r_outer = 0;
     if (r_inner < 0) r_inner = 0;
     float cx = side / 2.0f;
     float cy = side / 2.0f;
@@ -1030,33 +1066,38 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
           },
           LV_EVENT_DELETE, tick_pts);
       lv_obj_set_style_line_color(tick, lv_color_hex(kMutedHex), LV_PART_MAIN);
-      lv_obj_set_style_line_width(tick, 1, LV_PART_MAIN);
+      // Was 1px, per the report that even without the overlap above
+      // ticks this thin read as near-invisible on the panel.
+      lv_obj_set_style_line_width(tick, 2, LV_PART_MAIN);
+
+      if (tick_labels) {
+        // v_min/v_max are already DISPLAY-space bounds -- the band code
+        // above converts raw to display before comparing against them, and
+        // the live arc feeds scale_to_steps(display_value, min, max). So the
+        // interpolated value is the label; applying scale/offset again would
+        // transform it twice (a 0..100 arc with scale=100 would read 10000).
+        float disp_val = v_min + (v_max - v_min) * t;
+        lv_obj_t* lbl = lv_label_create(root);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(kMutedHex),
+                                     LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_label_set_text_fmt(lbl, "%.*f", tmp_disp.decimals, disp_val);
+        // Centered on a point a bit further inward of the tick's own
+        // inner endpoint, so the numeral clears the tick mark. Size
+        // isn't known until the text is set, so measure via
+        // lv_obj_update_layout and center manually rather than guess
+        // a fixed label width.
+        float lr = r_inner - 8.0f;
+        if (lr < 0) lr = 0;
+        float lx = cx + lr * cosf(rad) + (box_w - side) / 2;
+        float ly = cy + lr * sinf(rad) + (box_h - side) / 2;
+        lv_obj_update_layout(lbl);
+        lv_obj_set_pos(lbl,
+                        (lv_coord_t)(lx - lv_obj_get_width(lbl) / 2),
+                        (lv_coord_t)(ly - lv_obj_get_height(lbl) / 2));
+      }
     }
   }
-
-  lv_obj_t* arc = lv_arc_create(root);
-  lv_obj_set_size(arc, side, side);
-  lv_obj_align(arc, LV_ALIGN_CENTER, 0, 0);
-  lv_arc_set_range(arc, 0, kBarSteps);
-  lv_arc_set_bg_angles(arc, sa, ea);
-  lv_arc_set_angles(arc, sa, sa);
-  lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
-  lv_obj_set_clickable(arc, false);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(0x30363d), LV_PART_MAIN);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
-  // Pin the arc track + indicator width to ~8% of the arc side so the
-  // device matches the designer's SVG (stroke=8 in a 100-unit
-  // viewBox). LVGL 9's default theme uses a fixed ~25 px which
-  // overshadows small arcs and makes adjacent arcs visually collide
-  // even when the layout coords don't overlap.
-  const int arc_stroke = side / 12;  // ~8%
-  lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_MAIN);
-  lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_INDICATOR);
-  // Also lift the inactive bg arc above the bands so the bands sit
-  // visibly OUTSIDE rather than fighting the track. Re-pin the arc
-  // on top by setting it as the parent's last child via z-order:
-  lv_obj_move_foreground(arc);
-  (void)v_min; (void)v_max;  // captured by RangeBinding below
 
   auto* rb_arc = new RangeBinding{parse_display(spec),
                                   spec["min"] | 0.f, spec["max"] | 100.f,
