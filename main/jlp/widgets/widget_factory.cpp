@@ -1005,7 +1005,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_bg_angles(arc, sa, ea);
   lv_arc_set_angles(arc, sa, sa);
   lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
-  lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_clickable(arc, false);
   lv_obj_set_style_arc_color(arc, lv_color_hex(0x30363d), LV_PART_MAIN);
   lv_obj_set_style_arc_color(arc, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
   // Pin the arc track + indicator width to ~8% of the arc side so the
