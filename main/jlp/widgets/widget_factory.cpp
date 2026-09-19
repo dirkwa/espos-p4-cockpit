@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -13,6 +14,8 @@
 
 #include "cockpit_hal/ui.h"
 #include "esp_timer.h"
+#include "espos_cfg_keys.h"
+#include "espos_config.h"
 #include "espos_sk.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -678,14 +681,12 @@ struct SliderCtx {
   bool dragging;
 };
 
-lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
-  const char* path = spec["bind"] | (const char*)nullptr;
-  if (!path) { *err = "slider: bind required"; return nullptr; }
-  const Colors colors = parse_colors(spec);
-  lv_subject_t* sub = ctx.reg.get_or_create(path, SubjectKind::Float);
-  if (!sub) { *err = std::string("kind conflict on ") + path; return nullptr; }
-  ctx.live_paths.insert(path);
-
+// The chrome shared by the SK-bound slider and the panel-local
+// @brightness one: the tile, its caption, and an lv_slider across the
+// bottom in the widget's fg colour. The caller sets the range and wires
+// the value.
+lv_obj_t* build_slider_shell(BuildCtx& ctx, JsonObjectConst spec,
+                             const Colors& colors, lv_obj_t** out_slider) {
   lv_obj_t* root = lv_obj_create(ctx.parent);
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
@@ -708,11 +709,151 @@ lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   }
 
   lv_obj_t* sld = lv_slider_create(root);
-  lv_slider_set_range(sld, 0, kBarSteps);
   lv_obj_set_width(sld, LV_PCT(100));
   lv_obj_align(sld, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_obj_set_style_bg_color(sld, lv_color_hex(colors.fg), LV_PART_INDICATOR);
   lv_obj_set_style_bg_color(sld, lv_color_hex(colors.fg), LV_PART_KNOB);
+  *out_slider = sld;
+  return root;
+}
+
+// Panel-local backlight slider (bind "@brightness"). Same look as a
+// normal slider, but its value is this panel's own backlight, 5..100 %:
+// the `cockpit.brightness` setting the config API exposes and the
+// designer's top-bar control writes. Dragging previews on the backlight
+// at once; releasing persists through espos_config, whose change
+// callback in app_main hands the value to the idle dimmer, so the next
+// wake restores it exactly as after a config-API write. No SK path, no
+// SignalK PUT or subscription. min/max/display are ignored: the range is
+// the setting's.
+//
+// The knob follows a "@brightness" subject rather than the setting
+// directly, so the designer's preview can feed it the connected panel's
+// value the same way it feeds SK paths.
+constexpr char kBrightnessBind[] = "@brightness";
+constexpr int32_t kBrightnessMin = 5;
+constexpr int32_t kBrightnessMax = 100;
+
+struct BrightnessCtx {
+  bool dragging;
+};
+
+int32_t brightness_setting() {
+  int32_t pct = 95;
+  espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS, &pct);
+  return std::max(kBrightnessMin, std::min(kBrightnessMax, pct));
+}
+
+// Follows cockpit.brightness written elsewhere (the designer, the config
+// API) so an on-panel slider never shows a stale level. One subscription
+// per process; it feeds whichever "@brightness" subject the current
+// layout has, and nothing when the layout has none. Config callbacks run
+// on the writer's task, so the LVGL side is posted to the ui thread.
+void on_brightness_setting_changed(const char* ns, const char* key, void*) {
+  if (strcmp(ns, ESPOS_CFG_NS_COCKPIT) != 0) return;
+  if (strcmp(key, ESPOS_CFG_COCKPIT_BRIGHTNESS) != 0) return;
+  const int32_t pct = brightness_setting();
+  ui::post([pct] {
+    if (lv_subject_t* s = registry().lookup(kBrightnessBind)) {
+      lv_subject_set_float(s, (float)pct);
+    }
+  });
+}
+
+lv_obj_t* build_brightness_slider(BuildCtx& ctx, JsonObjectConst spec,
+                                  std::string* err) {
+  // One per layout: two would both write the setting and only the one
+  // being dragged could be right. live_paths is layout-scoped.
+  if (!ctx.live_paths.insert(kBrightnessBind).second) {
+    *err = "slider: only one @brightness per layout";
+    return nullptr;
+  }
+  lv_subject_t* sub = ctx.reg.get_or_create(kBrightnessBind, SubjectKind::Float);
+  if (!sub) { *err = std::string("kind conflict on ") + kBrightnessBind; return nullptr; }
+
+  const Colors colors = parse_colors(spec);
+  lv_obj_t* sld = nullptr;
+  lv_obj_t* root = build_slider_shell(ctx, spec, colors, &sld);
+  lv_slider_set_range(sld, kBrightnessMin, kBrightnessMax);
+
+  auto* bc = new BrightnessCtx{false};
+  lv_obj_set_user_data(sld, bc);
+  lv_obj_add_event_cb(
+      sld,
+      [](lv_event_t* e) {
+        delete static_cast<BrightnessCtx*>(lv_obj_get_user_data(
+            static_cast<lv_obj_t*>(lv_event_get_target(e))));
+      },
+      LV_EVENT_DELETE, nullptr);
+
+  lv_subject_add_observer_obj(
+      sub,
+      [](lv_observer_t* obs, lv_subject_t* s) {
+        auto* w = lv_observer_get_target_obj(obs);
+        auto* bc = static_cast<BrightnessCtx*>(lv_obj_get_user_data(w));
+        if (bc->dragging) return;
+        const int32_t pct = (int32_t)lroundf(lv_subject_get_float(s));
+        lv_slider_set_value(w, std::max(kBrightnessMin, std::min(kBrightnessMax, pct)),
+                            LV_ANIM_OFF);
+      },
+      sld, nullptr);
+  // Subscribe before the snapshot: the callback reports later commits
+  // only, so a write landing between the two would otherwise go unseen
+  // until the next one.
+  static bool subscribed = false;
+  if (!subscribed) {
+    subscribed = true;
+    espos_config_subscribe(on_brightness_setting_changed, nullptr);
+  }
+  lv_subject_set_float(sub, (float)brightness_setting());
+
+  // Preview while dragging: the operator sees the level they are choosing
+  // on the panel itself, which is the whole point of the control.
+  lv_obj_add_event_cb(
+      sld,
+      [](lv_event_t* e) {
+        auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        static_cast<BrightnessCtx*>(lv_obj_get_user_data(w))->dragging = true;
+        if (auto* d = ui::display()) d->set_brightness((uint8_t)lv_slider_get_value(w));
+      },
+      LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(
+      sld,
+      [](lv_event_t* e) {
+        auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+        static_cast<BrightnessCtx*>(lv_obj_get_user_data(w))->dragging = true;
+      },
+      LV_EVENT_PRESSING, nullptr);
+  // Persist on release. Unchanged values fire no callback, and the
+  // backlight is already where the preview left it.
+  auto commit_brightness_cb = [](lv_event_t* e) {
+    auto* w = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    static_cast<BrightnessCtx*>(lv_obj_get_user_data(w))->dragging = false;
+    espos_config_set_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS,
+                         lv_slider_get_value(w));
+  };
+  lv_obj_add_event_cb(sld, commit_brightness_cb, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(sld, commit_brightness_cb, LV_EVENT_PRESS_LOST, nullptr);
+  return root;
+}
+
+lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
+  const char* path = spec["bind"] | (const char*)nullptr;
+  if (!path) { *err = "slider: bind required"; return nullptr; }
+  // Local action sentinel: bind "@brightness" makes the slider this
+  // panel's backlight control. Handled entirely in
+  // build_brightness_slider to keep the SK-backed path below clean.
+  if (std::string(path) == kBrightnessBind) {
+    return build_brightness_slider(ctx, spec, err);
+  }
+  const Colors colors = parse_colors(spec);
+  lv_subject_t* sub = ctx.reg.get_or_create(path, SubjectKind::Float);
+  if (!sub) { *err = std::string("kind conflict on ") + path; return nullptr; }
+  ctx.live_paths.insert(path);
+
+  lv_obj_t* sld = nullptr;
+  lv_obj_t* root = build_slider_shell(ctx, spec, colors, &sld);
+  lv_slider_set_range(sld, 0, kBarSteps);
 
   auto* sc = new SliderCtx{parse_display(spec), spec["min"] | 0.f,
                            spec["max"] | 100.f, colors, path, sub, false};
