@@ -28,9 +28,18 @@ jobs:
       # hand; empty for pull requests, pushes and manual builds.
       RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || '' }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      # fetch-depth: 0 because the version this firmware reports comes from
+      # `git describe`, and checkout's default depth of 1 fetches no tags at
+      # all -- in either repository. Without it describe answers with a bare
+      # hash, espos_version.cmake rejects that as not-a-version and falls back
+      # to version.txt, and every build between two releases ships claiming to
+      # BE that release: `1.1.0` rather than `1.1.0-11-g8533ab4`. The same
+      # shallowness leaves the espOS submodule with zero tags, so the build log
+      # cannot name which espOS is in the image either.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+          fetch-depth: 0
           persist-credentials: false
 
       - name: read pinned IDF version
@@ -86,7 +95,7 @@ jobs:
           # CMake failure; check it is a usable RSA key before the 6-minute build.
           openssl rsa -in secure_boot_signing_key.pem -noout -check
 
-      - uses: espressif/esp-idf-ci-action@v1
+      - uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1 branch head
         with:
           esp_idf_version: ${{ steps.idf.outputs.version }}
           target: esp32p4
@@ -113,13 +122,13 @@ jobs:
           # The web UI is a separate LittleFS partition, so a missing or empty
           # one still yields a bootable image — the panel just serves espOS'
           # placeholder page instead of the config UI, which reads as a
-          # firmware bug. The bundle is committed in espos/ui/dist-gz, so a
-          # blank partition means a damaged submodule checkout. Offsets track
-          # p4_16mb.csv.
+          # firmware bug. The bundle is committed in
+          # espos/components/espos_httpd/ui-dist, so a blank partition means a
+          # damaged submodule checkout. Offsets track p4_16mb.csv.
           STORAGE = 0xD80000
           if len(data) <= STORAGE or data[STORAGE:STORAGE + 0x1000] == b"\xff" * 0x1000:
               sys.exit("error: storage partition missing or blank — the web UI "
-                       "image was not merged (is espos/ui/dist-gz checked out?)")
+                       "image was not merged (is espos/components/espos_httpd/ui-dist checked out?)")
           print("merged image looks structurally sound")
           PY
 
@@ -148,7 +157,7 @@ jobs:
 
       - name: Upload build artifact
         if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: merged-firmware
           path: dist/
@@ -165,7 +174,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: merged-firmware
           path: dist
@@ -209,7 +218,7 @@ jobs:
             echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           # Named explicitly: on a call there is no release event to read it from.
           tag_name: ${{ env.RELEASE_TAG }}
