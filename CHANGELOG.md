@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.1.0...v1.2.0) (2026-09-19)
+
+
+### Added
+
+* **slider:** [@brightness](https://github.com/brightness) sentinel for the backlight ([#126](https://github.com/dirkwa/espos-p4-cockpit/issues/126)) ([b2734c9](https://github.com/dirkwa/espos-p4-cockpit/commit/b2734c916bb6ca58a6678be09b41ab9fd1771c43))
+* **theme:** apply layout-level theme to screen bg and widget accent ([#120](https://github.com/dirkwa/espos-p4-cockpit/issues/120)) ([14a9388](https://github.com/dirkwa/espos-p4-cockpit/commit/14a9388d57a6a19513d8fe9d3afa467093c5b3c2))
+
+
+### Fixed
+
+* **arc:** make tick marks visible, implement tick_labels ([#125](https://github.com/dirkwa/espos-p4-cockpit/issues/125)) ([8533ab4](https://github.com/dirkwa/espos-p4-cockpit/commit/8533ab4c65ba320eba9d1a0fa1318aa69a1fe605))
+* **theme:** restore theme defaults when a layout build fails ([#124](https://github.com/dirkwa/espos-p4-cockpit/issues/124)) ([fa4636a](https://github.com/dirkwa/espos-p4-cockpit/commit/fa4636a296600fe74c8254dc165022d08d2fcbc2))
+
+## Changelog
+
 All notable changes to the P4 cockpit firmware. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are
 semantic as judged from a panel's point of view: a *major* bump is where a
