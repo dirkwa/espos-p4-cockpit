@@ -287,9 +287,16 @@ when the bump lands.
 - **Commits and PR titles**: Angular Conventional Commits —
   `type(scope): subject`, imperative, subject ≤ 50 chars. Types:
   `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`,
-  `chore`. Scope is optional (`fix(wake): ...`). The release notes are
-  generated from PR titles, so a vague title becomes a vague changelog
-  entry. Commits stay focused and atomic.
+  `chore`. Scope is optional (`fix(wake): ...`). The changelog is
+  generated from PR titles by release-please, so a vague title becomes a
+  vague changelog entry and a non-conventional one is missing from it
+  (`pr-title.yml` rejects those). Commits stay focused and atomic.
+- **Releases**: release-please keeps a `chore: release x.y.z` pull
+  request open on main with `CHANGELOG.md` and the `version.txt` bump;
+  merging it tags, publishes the release and calls
+  `release-firmware.yml` to build, sign and attach the images. Never bump
+  `version.txt` by hand and never create releases by hand; the version
+  is what the panel reports in `/hello` and the mDNS record.
 - **Never commit local/boat configuration.** No WiFi SSIDs or
   passwords, no server IPs, no personal wake words — not in source or
   sdkconfig. `strings` on a firmware image prints every one of them, and
