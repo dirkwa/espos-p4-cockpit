@@ -1,12 +1,21 @@
 name: Build & release firmware
 
 on:
+  # Called by release-please.yml once it has created a release: a release
+  # made with the workflow token never fires the `release:` trigger below,
+  # which stays for a release published by hand.
+  workflow_call:
+    inputs:
+      tag:
+        description: "The release tag to build, sign and attach assets to"
+        type: string
+        required: true
   release:
     types: [published]
   workflow_dispatch:
   pull_request:
   push:
-    branches: [master, espos]
+    branches: [main]
 
 permissions:
   contents: read
@@ -14,6 +23,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Non-empty for a release, whether called with a tag or published by
+      # hand; empty for pull requests, pushes and manual builds.
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || '' }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -34,7 +47,7 @@ jobs:
       # device, long after CI went green.
       - name: restore signing key (releases)
         id: signing
-        if: github.event_name == 'release'
+        if: env.RELEASE_TAG != ''
         env:
           KEY: ${{ secrets.COCKPIT_SIGNING_KEY_PEM }}
           ALLOW_UNSIGNED: ${{ vars.COCKPIT_ALLOW_UNSIGNED_RELEASE }}
@@ -86,7 +99,7 @@ jobs:
           pip install "esptool==4.8.1"
           python scripts/merge_firmware.py --build-dir build --chip esp32p4 \
             --out p4_cockpit-merged.bin \
-            ${{ github.event_name == 'release' && '--require-model' || '' }}
+            ${{ env.RELEASE_TAG != '' && '--require-model' || '' }}
 
       - name: Verify merged binary
         run: |
@@ -116,11 +129,11 @@ jobs:
       # The OTA asset carries the version because that is what a device is
       # pointed at by URL; the merged image is the USB/full-flash one.
       - name: Stage release assets
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
         env:
           # Via env, not ${{ }}: a tag name is arbitrary text and would
           # otherwise be pasted into this script before bash parses it.
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           # Manual runs are not releases: tag them with the commit so two
           # dispatch builds are never indistinguishable on disk.
@@ -134,7 +147,7 @@ jobs:
           ls -l dist/
 
       - name: Upload build artifact
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           name: merged-firmware
@@ -144,11 +157,13 @@ jobs:
       unsigned: ${{ steps.signing.outputs.unsigned }}
 
   release:
-    if: github.event_name == 'release'
+    if: inputs.tag != '' || github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -167,7 +182,7 @@ jobs:
         id: notes
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           # Fail closed: on a transient API error an empty `existing` would
           # replace the release notes with nothing but the warning. Losing the
@@ -196,6 +211,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          # Named explicitly: on a call there is no release event to read it from.
+          tag_name: ${{ env.RELEASE_TAG }}
           fail_on_unmatched_files: true
           files: dist/*.bin
           body: ${{ steps.notes.outputs.body }}
