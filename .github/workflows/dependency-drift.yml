@@ -32,9 +32,13 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 so `git describe` works in this repository and in the
+      # espOS submodule -- see release-firmware.yml for why the default of 1
+      # silently produces a wrong version rather than no version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+          fetch-depth: 0
           persist-credentials: false
 
       - name: read pinned IDF version

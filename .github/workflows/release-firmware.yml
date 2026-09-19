@@ -28,9 +28,18 @@ jobs:
       # hand; empty for pull requests, pushes and manual builds.
       RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name || '' }}
     steps:
+      # fetch-depth: 0 because the version this firmware reports comes from
+      # `git describe`, and checkout's default depth of 1 fetches no tags at
+      # all -- in either repository. Without it describe answers with a bare
+      # hash, espos_version.cmake rejects that as not-a-version and falls back
+      # to version.txt, and every build between two releases ships claiming to
+      # BE that release: `1.1.0` rather than `1.1.0-11-g8533ab4`. The same
+      # shallowness leaves the espOS submodule with zero tags, so the build log
+      # cannot name which espOS is in the image either.
       - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
+          fetch-depth: 0
           persist-credentials: false
 
       - name: read pinned IDF version
