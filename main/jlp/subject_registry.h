@@ -22,9 +22,11 @@ struct SubjectEntry {
   char str_prev[64];
 };
 
-// Maps SignalK path -> lv_subject_t. Subjects are created lazily by
-// widget builders during a layout build, and an espOS SignalK
-// subscription is opened alongside each so values (and meta) stream in.
+// Maps a widget bind -> lv_subject_t. Subjects are created lazily by
+// widget builders during a layout build. For a SignalK path an espOS
+// subscription is opened alongside so values (and meta) stream in; a
+// panel-local sentinel (a bind starting with '@', such as "@brightness")
+// gets a subject the panel feeds itself and no subscription.
 //
 // Threading: all calls happen on the UI thread. No mutex.
 class SubjectRegistry {
