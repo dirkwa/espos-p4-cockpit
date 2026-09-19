@@ -32,6 +32,8 @@ jobs:
             chore
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
+          # Only a capital first letter is rejected: a subject may start with
+          # a digit ("10.1-inch panel") or a symbol, and the pattern says so.
           subjectPatternError: >-
-            The subject "{subject}" must start with a lower-case letter, e.g.
+            The subject "{subject}" must not start with a capital letter, e.g.
             "feat(arc): tick labels". The title becomes the changelog entry.
