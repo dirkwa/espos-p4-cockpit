@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -357,11 +358,17 @@ extern "C" void app_main(void) {
   // lists them: this is what a client should offer, not every spelling the
   // device will accept. espOS holds the record until its responder is up
   // and re-announces it after every reconnect.
+  // The same string /hello reports, from the running app's version
+  // (version.txt), so the record cannot drift from the build the way a
+  // literal did.
+  static char fw_txt[64];
+  snprintf(fw_txt, sizeof(fw_txt), "firmware=p4-cockpit-jlp-%s",
+           esp_app_get_description()->version);
   static const char* const kPlayerTxt[] = {
       "schema=1",
       "widgets=label,value,toggle,arc,bar,bargroup,button,notifications,"
       "anchor,anchor_track,voice,speaker,mic,volume,slider,stream",
-      "firmware=p4-cockpit-jlp-2.0.0",
+      fw_txt,
       "api=/layout,/hello,/healthz,/screenshot",
   };
   esp_err_t merr = espos_mdns_add_service("_signalk-player", "_tcp", (uint16_t)api_port, kPlayerTxt,
