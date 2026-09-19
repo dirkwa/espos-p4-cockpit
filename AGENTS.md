@@ -296,7 +296,10 @@ when the bump lands.
   merging it tags, publishes the release and calls
   `release-firmware.yml` to build, sign and attach the images. Never bump
   `version.txt` by hand and never create releases by hand; the version
-  is what the panel reports in `/hello` and the mDNS record.
+  is what the panel reports in `/hello` and the mDNS record. The
+  workflow's `release:` trigger stays for recovery only: re-attaching
+  assets after a failed build, or a hotfix while release-please itself
+  is broken, and then the tag must match `version.txt`.
 - **Never commit local/boat configuration.** No WiFi SSIDs or
   passwords, no server IPs, no personal wake words — not in source or
   sdkconfig. `strings` on a firmware image prints every one of them, and
