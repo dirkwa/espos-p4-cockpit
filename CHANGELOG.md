@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.2.0...v1.3.0) (2026-09-20)
+
+
+### Added
+
+* **ci:** build and publish one image per panel board ([#131](https://github.com/dirkwa/espos-p4-cockpit/issues/131)) ([59c8203](https://github.com/dirkwa/espos-p4-cockpit/commit/59c820345f156ff540c74b9530a8f5afb4286fc6))
+
 ## [1.2.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.1.0...v1.2.0) (2026-09-19)
 
 
