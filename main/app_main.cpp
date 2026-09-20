@@ -319,6 +319,11 @@ extern "C" void app_main(void) {
   // ---- espOS: log → config → panel (before_network) → httpd → wifi → sk → ota
   espos_start_opts_t opts = ESPOS_START_OPTS_DEFAULT;
   opts.app_name = "p4-cockpit";   // "p4-cockpit <hostname>" in the server's access-request list
+  // Which panel this image was built for, in /api/v1/system/info. Nothing can
+  // discover it: the boards differ in controller, resolution and pins, and the
+  // wrong image leaves the screen black -- so a fleet manager must be told
+  // rather than guess before it offers an update.
+  opts.board = COCKPIT_BOARD_NAME;
   opts.before_network = panel_up;
   ESP_ERROR_CHECK(espos_start(&opts));
 
