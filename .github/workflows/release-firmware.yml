@@ -27,6 +27,11 @@ on:
 # from the release event when someone publishes by hand; both spellings of
 # the same release land in one group, and neither sits in the group of the
 # branch they were called from.
+#
+# A publishing run is never cancelled, not even by another run of the same
+# tag: re-running a failed upload, or publishing by hand while the called
+# run is still going, would otherwise kill an upload half-way and leave the
+# release carrying an incomplete asset set. Those queue instead.
 concurrency:
   group: >-
     firmware-${{
@@ -34,7 +39,7 @@ concurrency:
       && format('release-{0}', inputs.tag || github.event.release.tag_name)
       || github.ref
     }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !(inputs.tag || github.event.release.tag_name) }}
 
 permissions:
   contents: read
