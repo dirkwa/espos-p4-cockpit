@@ -27,12 +27,16 @@ jobs:
       # One image per panel. The boards are not interchangeable -- different
       # display controller, resolution, orientation and backlight/reset pins --
       # so a build serves exactly one, and flashing the other leaves the screen
-      # black in a way that reads as dead hardware. CI built only the Kconfig
-      # default (the 7B) until now, so every published release was a 7B image
-      # under a name that did not say so.
+      # black in a way that reads as dead hardware.
       #
-      # fail-fast off: one board failing to build should still yield the other,
-      # rather than leaving a release with no assets at all.
+      # fail-fast off so a failing board still reports its own error rather
+      # than being cancelled mid-compile by the other leg: that is a debugging
+      # convenience, NOT a partial-release policy. A release needs every
+      # board's assets (`needs: build` skips the release job unless both legs
+      # pass, and fail_on_unmatched_files catches a missing file), because a
+      # half-published release is worse than none: the registry resolves
+      # assets per board, so owners of the missing one would be offered a
+      # version that has no image they can install.
       fail-fast: false
       matrix:
         include:
@@ -70,6 +74,10 @@ jobs:
       # Kconfig choice without touching tracked files. It is git-ignored, so
       # nothing in the tree records which board a build was for -- the asset
       # name and the firmware's own opts.board do.
+      #
+      # Without this override a build takes the Kconfig default, which is the
+      # 7B: that is why release assets up to v1.2.0 carry no board in their
+      # name and are all 7B images.
       - name: select the panel board
         env:
           KCONFIG: ${{ matrix.kconfig }}
