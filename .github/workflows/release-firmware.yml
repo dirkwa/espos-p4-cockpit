@@ -17,6 +17,30 @@ on:
   push:
     branches: [main]
 
+# One run per ref, so a new push to a branch cancels the run already in
+# flight for it. A run that publishes keys on the release tag instead, so a
+# branch push can never share its group and cancel it part-way through
+# uploading the firmware assets -- half an asset set on a published release
+# is the one state worth protecting here.
+#
+# The tag comes from inputs.tag when release-please calls this workflow and
+# from the release event when someone publishes by hand; both spellings of
+# the same release land in one group, and neither sits in the group of the
+# branch they were called from.
+#
+# A publishing run is never cancelled, not even by another run of the same
+# tag: re-running a failed upload, or publishing by hand while the called
+# run is still going, would otherwise kill an upload half-way and leave the
+# release carrying an incomplete asset set. Those queue instead.
+concurrency:
+  group: >-
+    firmware-${{
+      (inputs.tag || github.event.release.tag_name)
+      && format('release-{0}', inputs.tag || github.event.release.tag_name)
+      || github.ref
+    }}
+  cancel-in-progress: ${{ !(inputs.tag || github.event.release.tag_name) }}
+
 permissions:
   contents: read
 
