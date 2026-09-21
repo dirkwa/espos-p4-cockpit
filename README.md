@@ -261,6 +261,15 @@ custom-trained word. Both are set from the espOS config UI at
 `http://<device>/` — no reflash. `GET /hello` reports which mode is live
 under `wake`.
 
+**The panel stops listening while a firmware update downloads**, and starts
+again when it finishes — whether the update succeeded or not. On-device
+detection is hard real-time (16 kHz from two microphones through esp-sr's
+AFE), and draining a 4.5 MB image starves it badly enough that the task
+watchdog reboots the panel mid-download. espOS parks the wake pipeline for
+the duration instead; the log says so (`ota: parking the wake pipeline`).
+An update takes a couple of minutes, so a wake word spoken during one is
+simply not heard.
+
 ## Flashing without a toolchain (browser-based)
 
 For the very first flash — or recovery if a device won't boot —
