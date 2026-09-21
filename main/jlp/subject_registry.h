@@ -16,8 +16,16 @@ enum class SubjectKind { Float, Int, Bool, String };
 struct SubjectEntry {
   std::string path;
   SubjectKind kind;
-  lv_subject_t subject;
-  // String storage (only used when kind == String).
+  // Owned by LVGL, not by this struct: lv_subject_create() allocates into an
+  // LVGL-internal list and returns a pointer. Never deleted, which is correct
+  // here rather than a leak -- garbage_collect() deliberately keeps every
+  // subject for the device lifetime (widgets of the previous layout may still
+  // be observing one while the swap animates), and the registry itself is a
+  // function-local static. Nothing in this file destroys a SubjectEntry.
+  lv_subject_t* subject = nullptr;
+  // String storage (only used when kind == String). Stays here and is handed
+  // to LVGL with lv_subject_set_string_buffer_static(), because a subject
+  // created for LV_SUBJECT_TYPE_STRING has no buffer of its own.
   char str_buf[64];
   char str_prev[64];
 };
