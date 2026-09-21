@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.0...v1.3.1) (2026-09-21)
+
+
+### Fixed
+
+* **jlp:** move the subject registry to LVGL's current subject API ([#134](https://github.com/dirkwa/espos-p4-cockpit/issues/134)) ([26a76a7](https://github.com/dirkwa/espos-p4-cockpit/commit/26a76a7e1cf1fb3800e964080d0382cad17a700c))
+
 ## [1.3.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.2.0...v1.3.0) (2026-09-20)
 
 
