@@ -28,7 +28,7 @@ void on_update(const espos_sk_update_t* u, void* arg) {
   if (u->value_json) {
     std::string v(u->value_json);
     cockpit_hal::ui::post([entry, v = std::move(v)]() {
-      lv_subject_t* s = &entry->subject;
+      lv_subject_t* s = entry->subject;
       switch (entry->kind) {
         case SubjectKind::Float:
           if (v != "null") lv_subject_set_float(s, strtof(v.c_str(), nullptr));
@@ -94,7 +94,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
                path.c_str(), (int)it->second.entry->kind, (int)kind);
       return nullptr;
     }
-    return &it->second.entry->subject;
+    return it->second.entry->subject;
   }
 
   auto entry = std::make_unique<SubjectEntry>();
@@ -103,24 +103,40 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
   entry->str_buf[0] = '\0';
   entry->str_prev[0] = '\0';
 
-  // NOTE: lv_subject_init_* is deprecated in LVGL 9.6 in favour of
-  // lv_subject_create(), which is NOT a drop-in: it allocates and returns a
-  // subject, whereas these initialise one this registry already owns by value
-  // inside SubjectEntry (and, for strings, whose buffers live there too).
-  // Moving to it changes the ownership and lifetime of every subject in the
-  // data-binding layer, so it is its own change rather than a rename.
+  // lv_subject_create() allocates the subject inside LVGL and returns it;
+  // the deprecated lv_subject_init_* family initialised one the caller owned.
+  // Safe to adopt here precisely because nothing destroys a subject:
+  // garbage_collect() keeps them all for the device lifetime and only
+  // unsubscribes, so there is no free path that could leak an LVGL list entry.
+  //
+  // A string subject is created WITHOUT storage (LVGL's init_string is called
+  // with a null buffer), so its buffers are attached separately. They stay in
+  // SubjectEntry: the value must outlive any single update, and
+  // lv_subject_set_string_buffer_static() takes memory the caller keeps.
   switch (kind) {
     case SubjectKind::Float:
-      lv_subject_init_float(&entry->subject, 0.f);
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_FLOAT);
       break;
     case SubjectKind::Int:
     case SubjectKind::Bool:
-      lv_subject_init_int(&entry->subject, 0);
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_INT);
       break;
     case SubjectKind::String:
-      lv_subject_init_string(&entry->subject, entry->str_buf,
-                             entry->str_prev, sizeof(entry->str_buf), "");
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_STRING);
+      if (entry->subject != nullptr) {
+        lv_subject_set_string_buffer_static(entry->subject, entry->str_buf,
+                                            entry->str_prev,
+                                            sizeof(entry->str_buf));
+      }
       break;
+  }
+  if (entry->subject == nullptr) {
+    // Out of LVGL memory, or a type this build disabled (LV_USE_FLOAT). A null
+    // subject would be dereferenced by every observer that binds to it, so
+    // refuse the path instead of registering a landmine.
+    ESP_LOGE(TAG, "lv_subject_create failed for %s (kind=%d)", path.c_str(),
+             (int)kind);
+    return nullptr;
   }
 
   Slot slot;
@@ -140,7 +156,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
     }
   }
 
-  lv_subject_t* sub = &slot.entry->subject;
+  lv_subject_t* sub = slot.entry->subject;
   map_.emplace(path, std::move(slot));
   ESP_LOGI(TAG, "created subject for %s (kind=%d)", path.c_str(), (int)kind);
 
@@ -150,7 +166,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
 lv_subject_t* SubjectRegistry::lookup(const std::string& path) const {
   auto it = map_.find(path);
   if (it == map_.end()) return nullptr;
-  return &it->second.entry->subject;
+  return it->second.entry->subject;
 }
 
 std::optional<SubjectKind> SubjectRegistry::kind_of(
