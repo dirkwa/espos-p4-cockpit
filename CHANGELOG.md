@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.1...v1.3.2) (2026-09-21)
+
+
+### Fixed
+
+* **ota:** an update no longer reboots the panel mid-download ([#139](https://github.com/dirkwa/espos-p4-cockpit/issues/139)) ([da1fcc3](https://github.com/dirkwa/espos-p4-cockpit/commit/da1fcc3af97842a894f0f140cf7500026df4fa1d))
+
 ## [1.3.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.0...v1.3.1) (2026-09-21)
 
 
