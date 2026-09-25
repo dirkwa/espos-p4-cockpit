@@ -44,7 +44,7 @@ reviews:
       instructions: |
         ## Scope
 
-        Focus on files changed since `master`. Consider how changes
+        Focus on files changed since `main`. Consider how changes
         interact with existing code and documentation, not just the diff
         in isolation.
 
@@ -142,3 +142,62 @@ reviews:
           — if a test asserts the copies match, that is the intended
           shape.
         - Deferred items listed under "Out of scope" in AGENTS.md.
+
+knowledge_base:
+  # The panel is the consumer end of several contracts owned elsewhere. Linked
+  # repositories let the reviewer check a change here against the code on the
+  # other side instead of guessing; the order is by how often a change here
+  # breaks that side, because the plan may truncate the list.
+  linked_repositories:
+    - repository: signalk-espOS/espOS
+      instructions: >-
+        The runtime this firmware builds on, pinned as the espos/ submodule at
+        a release tag. It owns the consumer prologue (cmake/espos_project.cmake),
+        the sdkconfig lint and P4 defaults (components/espos_core/project_include.cmake,
+        sdkconfig.d/espos.defaults.esp32p4), the partition tables, the weak
+        hooks this firmware provides strong definitions for
+        (espos_httpd_board_hook, espos_ota_quiesce_hook/resume_hook), the OTA
+        client and its manifest limits, the /api/v1 routes and the mDNS TXT
+        keys, and .github/workflows/build-firmware.yml, which this repo calls
+        with the tag and artifact inputs. A submodule bump must build against
+        the new tag; a change here must keep building against the pinned one.
+    - repository: signalk-espOS/registry
+      instructions: >-
+        projects/cockpit.json is this firmware's entry: asset regexes of the
+        form p4_cockpit-v<version>-<board>-{ota,merged}.bin with named groups
+        version and board, boards waveshare-p4-touch-7b (segment 7b) and
+        waveshare-p4-touch-x-7 (segment x7) whose reportedAs strings must equal
+        exactly what this firmware passes as espos_start_opts_t.board,
+        flashMinBytes 16 MiB, channels stable and beta. A renamed asset, board
+        or version scheme, or a new board, must keep that entry matching or
+        nothing indexes.
+    - repository: signalk-espOS/signalk-espos-manager
+      instructions: >-
+        The Signal K plugin that updates fielded panels: matches app "cockpit"
+        plus /system/info hardware.board against the registry (exact
+        reportedAs match, a build without boardId is withheld when two boards
+        share the chip), drives POST /ota {url} and expects the device to keep
+        answering briefly after state "ready", and hosts the browser flasher
+        that reads mergedWebUrl. Check version strings, board strings and OTA
+        timing changes against src/registry/resolve.ts, src/ota/job.ts and
+        web/src/flash/.
+    - repository: dirkwa/signalk-espos-stream
+      instructions: >-
+        The container-side capture server behind the `stream` widget:
+        [u32 BE length][baseline JPEG] frames, one ACK byte per displayed
+        frame, latest-frame-wins pacing, touch packets over UDP accepted only
+        from the connected stream client. Wire-format changes are valid only
+        in lockstep between the widget code here and
+        container/capture-server-ack.py there.
+    - repository: dirkwa/signalk-hmi-designer
+      instructions: >-
+        The layout designer that pushes JLP JSON to this firmware over HTTP.
+        It reads the /hello widgets dictionary and refuses unknown kinds, and
+        it renders layouts against the same schema. A new widget kind, a new
+        or changed field, or a schema bump here is a wire change the designer
+        must learn.
+    - repository: dirkwa/espos-p4-cockpit-wasm
+      instructions: >-
+        The JLP renderer compiled to WebAssembly for the designer's preview.
+        A widget kind, field or theming change in the renderer here needs the
+        same change there, or the preview and the panel diverge.
