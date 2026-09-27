@@ -356,9 +356,14 @@ jobs:
           # to exist. On the `release:` trigger this is already true by
           # construction; the check costs one API call and covers the manual
           # path.
-          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "::error::no release '$TAG' in ${REPO}. Create the release" \
-                 "first, or re-run for a tag that exists."
+          # stderr kept, not discarded: an expired token or a GitHub outage fails
+          # this the same way a missing release does, and "create the release
+          # first" is misleading advice for either. The reason is the difference
+          # between re-running and fixing the token.
+          if ! view_err=$(gh release view "$TAG" --repo "$REPO" 2>&1 >/dev/null); then
+            echo "::error::could not confirm release '$TAG' in ${REPO}: ${view_err}." \
+                 "If it does not exist, create it first or re-run for a tag that" \
+                 "does; if the call itself failed, this is safe to re-run."
             exit 1
           fi
           echo "release '$TAG' exists"
