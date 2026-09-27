@@ -692,10 +692,11 @@ jobs:
       # advertising a tag whose release has no assets -- exactly the state this
       # step exists to undo.
       #
-      # Safe to widen because this is the last step and the restore is guarded on
-      # a marker written only after the push succeeded: a failure before or
-      # during the push leaves no marker, so this exits 0 without touching
-      # anything.
+      # Safe to widen because this is the last step and every undo it does is
+      # leased. stage_and_push writes the marker just BEFORE its push, so a
+      # failure earlier than that leaves none and the step exits without touching
+      # anything; a marker naming a commit that never reached the remote is a
+      # stale lease, which the remote refuses, so that case is a no-op too.
       - name: roll the mirror back if anything after it failed
         # Cancellation too, not only failure: a run cancelled by hand, or timed
         # out, AFTER the mirror pushed leaves the branch advertising a tag whose
