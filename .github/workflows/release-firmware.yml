@@ -472,7 +472,11 @@ jobs:
             # is the worst outcome available here.
             printf '%s' "${base:-}" > "${RUNNER_TEMP}/release-assets-base"
             rm -rf "$snapshot"
-            if ! git clone -q --branch release-assets "$remote" "$snapshot" 2>/dev/null; then
+            # --single-branch, but NOT --depth: the snapshot has to be pushable,
+            # and a shallow clone of a no-history branch cannot be pushed back
+            # ("shallow update not allowed").
+            if ! git clone -q --single-branch --branch release-assets \
+                   "$remote" "$snapshot" 2>/dev/null; then
               echo "::warning::could not snapshot release-assets; a failure after" \
                    "the push will leave the mirror advertising $TAG"
               return 0
@@ -710,11 +714,12 @@ jobs:
         run: |
           set -euo pipefail
           remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
-          # Nothing to undo unless the mirror actually pushed. Without this the
-          # rollback would act on a run that failed BEFORE pushing -- the
-          # base is recorded earlier than the push -- and it would then delete or
-          # rewind a branch this run never touched, which is the very damage it
-          # exists to prevent.
+          # Nothing to undo unless the mirror got as far as pushing. The marker is
+          # written just before the push, so a run that failed earlier -- a bad
+          # tag, an oversized image, an unreadable branch -- leaves none and this
+          # exits without touching anything. A run that failed just after writing
+          # it but before the push landed leaves a stale lease, so the undo below
+          # is refused and is likewise a no-op.
           if [ ! -f "${RUNNER_TEMP}/release-assets-pushed" ]; then
             echo "the mirror did not push; nothing to roll back"
             exit 0
