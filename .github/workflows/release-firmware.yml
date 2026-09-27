@@ -269,11 +269,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # The mirror step force-pushes one branch, so two releases running at once
-    # would race and the loser's images would vanish. Serialised per repository
-    # rather than per tag, because the conflict is over the branch and not the
-    # directory inside it. cancel-in-progress stays false: cancelling a run
-    # mid-push is how the branch ends up holding neither release.
+    # Serialise releases per repository, because the mirror step below pushes one
+    # shared branch. This is an optimisation, NOT the safety guarantee: GitHub
+    # keeps at most ONE pending job per group, so three releases published close
+    # together mean the middle one is cancelled and attaches nothing -- and it
+    # never reaches its rollback step, because its job never started. That tag
+    # then needs re-running by hand (workflow_dispatch), which is safe to do
+    # because the push itself leases against the tip it read.
+    #
+    # cancel-in-progress stays false: cancelling the RUNNING job mid-push is how
+    # the branch ends up holding neither release.
     concurrency:
       group: release-assets-${{ github.repository }}
       cancel-in-progress: false
@@ -386,10 +391,9 @@ jobs:
       #
       # It KEEPS older tags rather than holding only the newest, because this
       # job can run for an old tag at any time -- `workflow_dispatch` takes a
-      # tag, and there is no concurrency control -- and a run that published
-      # only its own tag would delete a newer release's images. Publishing is
-      # therefore additive, and the oldest are pruned below so the branch stays
-      # bounded.
+      # tag -- and a run that published only its own tag would delete a newer
+      # release's images. Publishing is therefore additive, and the oldest are
+      # pruned below so the branch stays bounded.
       - name: mirror the images where a browser can read them
         env:
           TAG: ${{ env.RELEASE_TAG }}
@@ -417,7 +421,7 @@ jobs:
             echo "pruned. The releases themselves remain the archive, so"
             echo "firmware pruned from here is still downloadable from its"
             echo "release."
-          } > "$work/README.md"
+          } > "${RUNNER_TEMP}/release-assets-README.md"
 
           remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
 
@@ -445,6 +449,10 @@ jobs:
               echo "release-assets exists; restoring it before adding $TAG"
               git fetch -q --depth 1 "$remote" release-assets
               git checkout -q FETCH_HEAD -- .
+              # The tip this run started from. The push below leases against it,
+              # so a concurrent run that pushed in between is detected instead of
+              # overwritten.
+              base=$(git rev-parse FETCH_HEAD)
               echo "existing tags on the branch:"
               find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' \
                 -printf '  %f\n' | sort -V
@@ -474,12 +482,14 @@ jobs:
 
           # Re-stage this tag's images over whatever was there, so re-running a
           # release replaces its own directory and leaves the others alone.
+          cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
           rm -rf -- "${TAG:?}"
           mkdir -p "$TAG"
           cp "$staged"/*.bin "$TAG/"
 
-          # Keep the branch bounded: newest KEEP tags by commit order, which is
-          # the order they were published in. Old firmware stays downloadable
+          # Keep the branch bounded: the newest KEEP tags by VERSION order (the
+          # sort below), not by when they were published. Old firmware stays
+          # downloadable
           # from its release; only the browser-readable copy is pruned.
           # Keep the newest KEEP, and ALWAYS keep the tag this run publishes.
           # Without that exception, re-publishing an old tag while KEEP newer
@@ -510,11 +520,68 @@ jobs:
             rm -rf -- "$old"
           done
 
-          # One commit, no history: --force replaces the branch wholesale, and
+          # One commit, no history: the push replaces the branch wholesale, and
           # what it contains is everything above rather than this tag alone.
-          git add -A
-          git commit -q -m "firmware for $TAG"
-          git push -q --force "$remote" release-assets
+          #
+          # --force-with-lease, not --force: the concurrency group above keeps two
+          # runs from pushing at once, but it is not a guarantee. GitHub holds at
+          # most ONE pending job per group, so a third release entering the queue
+          # cancels the second -- which would then attach nothing and never reach
+          # the rollback step, because its job never started. Anyone re-running
+          # that tag by hand is then racing whatever has published since. The
+          # lease makes the push itself safe: if the branch moved under us the
+          # push is rejected rather than silently discarding the other run's tag,
+          # and we redo the whole fetch/stage/prune from the new tip.
+          stage_and_push() {
+            git add -A
+            git commit -q -m "firmware for $TAG"
+            if [ -n "${base:-}" ]; then
+              git push -q --force-with-lease="release-assets:${base}" \
+                "$remote" HEAD:release-assets
+            else
+              # First publish. An empty lease means "expect the branch not to
+              # exist", so a branch created meanwhile is a rejection rather than
+              # something this run flattens.
+              git push -q --force-with-lease="release-assets:" \
+                "$remote" HEAD:release-assets
+            fi
+          }
+
+          attempt=1
+          until stage_and_push; do
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::release-assets moved under this run 3 times;" \
+                   "giving up rather than discarding another release's images."
+              exit 1
+            fi
+            echo "::warning::release-assets moved since this run read it" \
+                 "(attempt $attempt); re-reading and re-staging."
+            attempt=$((attempt + 1))
+            # Start over from the new tip. Discard this run's commit entirely
+            # rather than reset --soft HEAD~1: on the first attempt the commit
+            # has no parent, so HEAD~1 does not resolve and the command errors
+            # (harmlessly, but it looks like a real failure in the log). An
+            # orphan branch has no history worth keeping here -- the push is a
+            # wholesale replacement either way.
+            git checkout -q --orphan rebuild
+            git rm -rq --cached . >/dev/null 2>&1 || true
+            find . -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+            git fetch -q --depth 1 "$remote" release-assets
+            git checkout -q FETCH_HEAD -- .
+            base=$(git rev-parse FETCH_HEAD)
+            cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
+            rm -rf -- "${TAG:?}"
+            mkdir -p "$TAG"
+            cp "$staged"/*.bin "$TAG/"
+            mapfile -t others < <(
+              find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%f\n' \
+                | grep -Fxv -- "$TAG" | sort -rV
+            )
+            for old in "${others[@]:$((KEEP - 1))}"; do
+              echo "pruning $old"
+              rm -rf -- "$old"
+            done
+          done
 
           echo "published $TAG to the release-assets branch:"
           for f in "$TAG"/*.bin; do
