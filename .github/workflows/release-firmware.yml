@@ -412,8 +412,11 @@ jobs:
             echo "hosted flasher fetches them from raw.githubusercontent.com,"
             echo "which does send it."
             echo
-            echo "Force-pushed on every release; holds only the current one."
-            echo "The releases remain the archive."
+            echo "Force-pushed on every release. Holds the newest few tags,"
+            echo "the current one always among them; older directories are"
+            echo "pruned. The releases themselves remain the archive, so"
+            echo "firmware pruned from here is still downloadable from its"
+            echo "release."
           } > "$work/README.md"
 
           remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
