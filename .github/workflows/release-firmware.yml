@@ -580,6 +580,14 @@ jobs:
           stage_and_push() {
             git add -A
             git commit -q -m "firmware for $TAG"
+            # Record the commit BEFORE pushing it, not after the loop succeeds. A
+            # run cancelled or timed out mid-push may have landed it, and the
+            # rollback needs this SHA to lease against; written afterwards, that
+            # case left no marker and the rollback skipped a branch this run had
+            # already changed. Recording a commit that never reached the remote is
+            # harmless by comparison: the rollback's lease is then stale, so it is
+            # refused and nothing is touched.
+            git rev-parse HEAD > "${RUNNER_TEMP}/release-assets-pushed"
             if [ -n "${base:-}" ]; then
               git push -q --force-with-lease="release-assets:${base}" \
                 "$remote" HEAD:release-assets
@@ -650,15 +658,6 @@ jobs:
             take_snapshot
             stage_tag
           done
-
-          # Only now did this run change the branch. The rollback step keys off
-          # this marker: the base is recorded BEFORE the push, so without it a
-          # failure between reading the branch and pushing would have the rollback
-          # rewind -- or delete -- a branch this run never modified.
-          # The commit this run put on the branch, and the tip it replaced. The
-          # rollback leases against the first so it cannot flatten a LATER run's
-          # push, and restores the second.
-          git rev-parse HEAD > "${RUNNER_TEMP}/release-assets-pushed"
 
           echo "published $TAG to the release-assets branch:"
           for f in "$TAG"/*.bin; do
