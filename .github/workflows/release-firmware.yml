@@ -563,7 +563,11 @@ jobs:
             # (harmlessly, but it looks like a real failure in the log). An
             # orphan branch has no history worth keeping here -- the push is a
             # wholesale replacement either way.
-            git checkout -q --orphan rebuild
+            # Unique per attempt: `git checkout --orphan` fails with "a branch
+            # named 'rebuild' already exists" the second time round, so a fixed
+            # name turns the third attempt into a hard error before it can even
+            # retry. Reproduced locally.
+            git checkout -q --orphan "rebuild-$attempt"
             git rm -rq --cached . >/dev/null 2>&1 || true
             find . -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
             git fetch -q --depth 1 "$remote" release-assets
@@ -582,6 +586,13 @@ jobs:
               rm -rf -- "$old"
             done
           done
+
+          # Only now did this run change the branch. The rollback step keys off
+          # this marker rather than off the snapshot alone: the snapshot and the
+          # was-absent marker are both recorded BEFORE the push, so a failure
+          # between them and a successful push would otherwise have the rollback
+          # rewind -- or delete -- a branch this run never modified.
+          touch "${RUNNER_TEMP}/release-assets-pushed"
 
           echo "published $TAG to the release-assets branch:"
           for f in "$TAG"/*.bin; do
@@ -612,9 +623,10 @@ jobs:
       # advertising a tag whose release has no assets -- exactly the state this
       # step exists to undo.
       #
-      # Safe to widen because this is the last step and the restore is guarded:
-      # a failure before the mirror ran leaves neither snapshot nor
-      # was-absent marker, so it warns and exits 0 without touching anything.
+      # Safe to widen because this is the last step and the restore is guarded on
+      # a marker written only after the push succeeded: a failure before or
+      # during the push leaves no marker, so this exits 0 without touching
+      # anything.
       - name: roll the mirror back if anything after it failed
         if: failure()
         env:
@@ -625,6 +637,16 @@ jobs:
           set -euo pipefail
           remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
           snapshot="${RUNNER_TEMP}/release-assets-before"
+
+          # Nothing to undo unless the mirror actually pushed. Without this the
+          # rollback would act on a run that failed BEFORE pushing -- the
+          # snapshot and the was-absent marker are recorded earlier than the push
+          # -- and it would then delete or rewind a branch this run never
+          # touched, which is the very damage it exists to prevent.
+          if [ ! -f "${RUNNER_TEMP}/release-assets-pushed" ]; then
+            echo "the mirror did not push; nothing to roll back"
+            exit 0
+          fi
 
           # The branch did not exist before this run, so "restoring" it means
           # removing what this run created.
