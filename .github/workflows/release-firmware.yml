@@ -402,7 +402,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          work=$(mktemp -d)
+          # Under RUNNER_TEMP, not mktemp: the rollback step needs this
+          # repository's objects to restore the pre-push tip, and a path it can
+          # predict is the only way to reach them from another step.
+          work="${RUNNER_TEMP}/release-assets-work"
+          rm -rf "$work"; mkdir -p "$work"
           staged=$PWD/dist
 
           {
@@ -453,24 +457,26 @@ jobs:
               # so a concurrent run that pushed in between is detected instead of
               # overwritten.
               base=$(git rev-parse FETCH_HEAD)
+              # A full clone of the branch as it stands, for the rollback to push
+              # back. It cannot be done from THIS repository: the fetch above is
+              # --depth 1 and the branch is force-pushed with no history, so the
+              # pre-push commit is not an ancestor of anything and pushing it is
+              # refused as a shallow update ("shallow update not allowed" --
+              # reproduced). A clone carries the objects in a pushable shape.
+              snapshot="${RUNNER_TEMP}/release-assets-before"
+              rm -rf "$snapshot"
+              git clone -q --branch release-assets "$remote" "$snapshot" 2>/dev/null \
+                || echo "::warning::could not snapshot release-assets; a failure" \
+                        "after the push will leave the mirror advertising $TAG"
               echo "existing tags on the branch:"
               find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' \
                 -printf '  %f\n' | sort -V
-              # Keep the branch exactly as it was, so a later failure to attach
-              # the release assets can put it back rather than leaving the
-              # mirror advertising images the release does not have.
-              snapshot="${RUNNER_TEMP}/release-assets-before"
-              rm -rf "$snapshot"
-              git clone -q --depth 1 --branch release-assets \
-                "$remote" "$snapshot" 2>/dev/null \
-                || echo "::warning::could not snapshot release-assets; no rollback will be possible"
               ;;
             2)
               echo "release-assets does not exist yet; creating it"
-              # Record that there was nothing here before, so a rollback deletes
-              # the branch this run creates rather than warning about a snapshot
-              # that could never have existed.
-              touch "${RUNNER_TEMP}/release-assets-was-absent"
+              # No base is recorded for a branch that did not exist, which is
+              # how the rollback tells "delete what this run created" from
+              # "restore what it replaced".
               ;;
             *)
               echo "::error::could not reach ${REPO} to read release-assets" \
@@ -577,9 +583,8 @@ jobs:
           done
 
           # Only now did this run change the branch. The rollback step keys off
-          # this marker rather than off the snapshot alone: the snapshot and the
-          # was-absent marker are both recorded BEFORE the push, so a failure
-          # between them and a successful push would otherwise have the rollback
+          # this marker: the base is recorded BEFORE the push, so without it a
+          # failure between reading the branch and pushing would have the rollback
           # rewind -- or delete -- a branch this run never modified.
           # The commit this run put on the branch, and the tip it replaced. The
           # rollback leases against the first so it cannot flatten a LATER run's
@@ -596,8 +601,8 @@ jobs:
       # branch advertises images for a release that has none. Roll the mirror
       # back to what it held before this run, so the two never disagree.
       #
-      # Only ever on failure, and only for this tag: it re-pushes the snapshot
-      # taken before the mirror step, which is why that step records one.
+      # Only ever on failure, and only for this tag: it re-pushes the commit the
+      # mirror step recorded as the branch's tip before it pushed.
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           # Named explicitly: on a workflow_call there is no release event.
@@ -621,7 +626,12 @@ jobs:
       # during the push leaves no marker, so this exits 0 without touching
       # anything.
       - name: roll the mirror back if anything after it failed
-        if: failure()
+        # Cancellation too, not only failure: GitHub cancels the pending job when a
+        # third release joins the concurrency group, and a run cancelled after its
+        # push leaves the branch advertising a tag whose release has no assets --
+        # the same mess a failure leaves. The marker check below still means a run
+        # cancelled BEFORE pushing does nothing.
+        if: failure() || cancelled()
         env:
           TAG: ${{ env.RELEASE_TAG }}
           REPO: ${{ github.repository }}
@@ -629,28 +639,27 @@ jobs:
         run: |
           set -euo pipefail
           remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
-          snapshot="${RUNNER_TEMP}/release-assets-before"
-
           # Nothing to undo unless the mirror actually pushed. Without this the
           # rollback would act on a run that failed BEFORE pushing -- the
-          # snapshot and the was-absent marker are recorded earlier than the push
-          # -- and it would then delete or rewind a branch this run never
-          # touched, which is the very damage it exists to prevent.
+          # base is recorded earlier than the push -- and it would then delete or
+          # rewind a branch this run never touched, which is the very damage it
+          # exists to prevent.
           if [ ! -f "${RUNNER_TEMP}/release-assets-pushed" ]; then
             echo "the mirror did not push; nothing to roll back"
             exit 0
           fi
           pushed=$(cat "${RUNNER_TEMP}/release-assets-pushed")
+          base=$(cat "${RUNNER_TEMP}/release-assets-base" 2>/dev/null || true)
 
           # Every undo below leases against the commit THIS run pushed. If the
           # branch has moved on since -- another release published while this one
-          # was failing -- the lease is rejected and their work stands, which is
-          # the right outcome: this step exists to remove one run's own mirror
-          # entry, not to win a race with whoever came after.
-          #
-          # The branch did not exist before this run, so "restoring" it means
-          # removing what this run created.
-          if [ -f "${RUNNER_TEMP}/release-assets-was-absent" ]; then
+          # was failing -- the lease is rejected, their work stands, and that is
+          # the right outcome: this step removes one run's own mirror entry, it
+          # does not win a race with whoever came after.
+
+          # No base means the branch did not exist before this run, so "restoring"
+          # it means removing what this run created.
+          if [ -z "$base" ]; then
             echo "release-assets did not exist before this run; deleting it"
             git push -q --force-with-lease="release-assets:${pushed}" \
               "$remote" :release-assets \
@@ -660,10 +669,11 @@ jobs:
             exit 0
           fi
 
+          # Restore what this run replaced, from the clone taken before the push.
+          snapshot="${RUNNER_TEMP}/release-assets-before"
           if [ ! -d "$snapshot/.git" ]; then
-            echo "::warning::no pre-mirror snapshot to restore; the" \
-                 "release-assets branch may advertise $TAG with no assets" \
-                 "attached to the release."
+            echo "::warning::no pre-push snapshot to restore; the release-assets" \
+                 "branch may advertise $TAG with no assets attached to the release."
             exit 0
           fi
           cd "$snapshot"
@@ -672,4 +682,4 @@ jobs:
             || echo "::warning::release-assets moved since this run pushed;" \
                     "leaving it as it is rather than discarding a later" \
                     "release's images"
-          echo "release-assets restored to its state before this run"
+          echo "release-assets restored to ${base}, its state before this run"
