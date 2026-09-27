@@ -459,6 +459,13 @@ jobs:
           # than not restoring at all.
           snapshot="${RUNNER_TEMP}/release-assets-before"
           take_snapshot() {
+            # Record the base FIRST, before anything that can fail. It answers a
+            # different question from the snapshot -- "did this branch exist when we
+            # read it" versus "can we put it back" -- and the rollback deletes the
+            # branch when there is no base. So a failed clone that skipped this
+            # write would have the rollback delete a branch that did exist, which
+            # is the worst outcome available here.
+            printf '%s' "${base:-}" > "${RUNNER_TEMP}/release-assets-base"
             rm -rf "$snapshot"
             if ! git clone -q --branch release-assets "$remote" "$snapshot" 2>/dev/null; then
               echo "::warning::could not snapshot release-assets; a failure after" \
@@ -474,7 +481,6 @@ jobs:
               rm -rf "$snapshot"
               return 0
             fi
-            printf '%s' "$base" > "${RUNNER_TEMP}/release-assets-base"
           }
 
           set +e
