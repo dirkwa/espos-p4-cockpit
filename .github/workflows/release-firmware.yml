@@ -444,6 +444,39 @@ jobs:
           # Only exit 2 means "no such branch"; 128 means the remote could not
           # be reached at all. Treating those alike is how an auth or network
           # failure force-pushes an empty branch over every release's images.
+          # Snapshot the tip this run is about to replace, for the rollback to
+          # push back, and record which commit that is.
+          #
+          # Re-taken on every retry, not once: a rejected lease means the branch
+          # moved, the retry reads a NEW base, and a snapshot still holding the old
+          # tip would have the rollback restore a state from before another
+          # release's tag existed -- deleting their directory while their release
+          # still points at it. Their webAssetsBranch URLs would 404.
+          #
+          # The clone is a second read of the branch, so it can land on a tip newer
+          # than $base. Verified rather than assumed: if they disagree the snapshot
+          # is unusable and dropped, because restoring the wrong commit is worse
+          # than not restoring at all.
+          snapshot="${RUNNER_TEMP}/release-assets-before"
+          take_snapshot() {
+            rm -rf "$snapshot"
+            if ! git clone -q --branch release-assets "$remote" "$snapshot" 2>/dev/null; then
+              echo "::warning::could not snapshot release-assets; a failure after" \
+                   "the push will leave the mirror advertising $TAG"
+              return 0
+            fi
+            local snaphead
+            snaphead=$(git -C "$snapshot" rev-parse HEAD)
+            if [ "$snaphead" != "${base:-}" ]; then
+              echo "::warning::release-assets moved between reading it ($base) and" \
+                   "snapshotting it ($snaphead); discarding the snapshot rather" \
+                   "than risking a rollback to the wrong commit"
+              rm -rf "$snapshot"
+              return 0
+            fi
+            printf '%s' "$base" > "${RUNNER_TEMP}/release-assets-base"
+          }
+
           set +e
           git ls-remote --exit-code --heads "$remote" release-assets >/dev/null 2>&1
           lsr=$?
@@ -457,17 +490,12 @@ jobs:
               # so a concurrent run that pushed in between is detected instead of
               # overwritten.
               base=$(git rev-parse FETCH_HEAD)
-              # A full clone of the branch as it stands, for the rollback to push
-              # back. It cannot be done from THIS repository: the fetch above is
+              # Cloned, not pushed from this repository: the fetch above is
               # --depth 1 and the branch is force-pushed with no history, so the
               # pre-push commit is not an ancestor of anything and pushing it is
               # refused as a shallow update ("shallow update not allowed" --
               # reproduced). A clone carries the objects in a pushable shape.
-              snapshot="${RUNNER_TEMP}/release-assets-before"
-              rm -rf "$snapshot"
-              git clone -q --branch release-assets "$remote" "$snapshot" 2>/dev/null \
-                || echo "::warning::could not snapshot release-assets; a failure" \
-                        "after the push will leave the mirror advertising $TAG"
+              take_snapshot
               echo "existing tags on the branch:"
               find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' \
                 -printf '  %f\n' | sort -V
@@ -579,6 +607,8 @@ jobs:
             git fetch -q --depth 1 "$remote" release-assets
             git checkout -q FETCH_HEAD -- .
             base=$(git rev-parse FETCH_HEAD)
+            # The branch moved, so the old snapshot is stale -- see take_snapshot.
+            take_snapshot
             stage_tag
           done
 
@@ -590,7 +620,6 @@ jobs:
           # rollback leases against the first so it cannot flatten a LATER run's
           # push, and restores the second.
           git rev-parse HEAD > "${RUNNER_TEMP}/release-assets-pushed"
-          printf '%s' "${base:-}" > "${RUNNER_TEMP}/release-assets-base"
 
           echo "published $TAG to the release-assets branch:"
           for f in "$TAG"/*.bin; do
@@ -626,11 +655,15 @@ jobs:
       # during the push leaves no marker, so this exits 0 without touching
       # anything.
       - name: roll the mirror back if anything after it failed
-        # Cancellation too, not only failure: GitHub cancels the pending job when a
-        # third release joins the concurrency group, and a run cancelled after its
-        # push leaves the branch advertising a tag whose release has no assets --
-        # the same mess a failure leaves. The marker check below still means a run
-        # cancelled BEFORE pushing does nothing.
+        # Cancellation too, not only failure: a run cancelled by hand, or timed
+        # out, AFTER the mirror pushed leaves the branch advertising a tag whose
+        # release has no assets -- the same mess a failure leaves.
+        #
+        # Not the queue-dropped case, which this cannot recover: a job GitHub
+        # cancels while still pending never started, so it never pushed and this
+        # step never runs. That tag needs re-running by hand (see the concurrency
+        # comment above). The marker check below is what makes the distinction --
+        # no push, nothing to undo.
         if: failure() || cancelled()
         env:
           TAG: ${{ env.RELEASE_TAG }}
@@ -677,9 +710,14 @@ jobs:
             exit 0
           fi
           cd "$snapshot"
-          git push -q --force-with-lease="release-assets:${pushed}" \
-            "$remote" HEAD:release-assets \
-            || echo "::warning::release-assets moved since this run pushed;" \
-                    "leaving it as it is rather than discarding a later" \
-                    "release's images"
-          echo "release-assets restored to ${base}, its state before this run"
+          # The success line belongs inside the branch: printing it after a `||`
+          # meant a refused lease logged the warning AND "restored", and whoever
+          # reads this log is deciding whether to repair the mirror by hand.
+          if git push -q --force-with-lease="release-assets:${pushed}" \
+               "$remote" HEAD:release-assets; then
+            echo "release-assets restored to ${base}, its state before this run"
+          else
+            echo "::warning::release-assets moved since this run pushed;" \
+                 "leaving it as it is rather than discarding a later" \
+                 "release's images"
+          fi
