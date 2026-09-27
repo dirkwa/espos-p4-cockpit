@@ -482,43 +482,43 @@ jobs:
 
           # Re-stage this tag's images over whatever was there, so re-running a
           # release replaces its own directory and leaves the others alone.
-          cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
-          rm -rf -- "${TAG:?}"
-          mkdir -p "$TAG"
-          cp "$staged"/*.bin "$TAG/"
-
-          # Keep the branch bounded: the newest KEEP tags by VERSION order (the
-          # sort below), not by when they were published. Old firmware stays
-          # downloadable
-          # from its release; only the browser-readable copy is pruned.
-          # Keep the newest KEEP, and ALWAYS keep the tag this run publishes.
-          # Without that exception, re-publishing an old tag while KEEP newer
-          # ones already exist prunes the directory just written, and the step
-          # then reports success with URLs that 404. Reproduced with v0.1.0
-          # behind five newer tags.
           #
-          # Sorted by version, not lexically, or v0.10.0 would prune before
-          # v0.6.0.
-          # Lower than the gateway's 5 because a cockpit tag is much heavier: two
-          # boards x (15 MB merged + 4.5 MB ota) is ~39 MB per tag, where a
-          # gateway tag is a few MB. Three keeps the current release plus two to
-          # roll back to, for ~117 MB, and the releases remain the archive --
-          # only the browser-readable copy is pruned.
+          # A function because the retry below has to redo exactly this from the
+          # new tip: two copies of the staging and the prune drifted apart the
+          # moment one of them was fixed.
+          stage_tag() {
+            cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
+            rm -rf -- "${TAG:?}"
+            mkdir -p "$TAG"
+            cp "$staged"/*.bin "$TAG/"
+            # Keep the branch bounded: the newest KEEP tags by VERSION order, not
+            # by when they were published, or v0.10.0 would prune before v0.6.0.
+            # ALWAYS keep the tag this run publishes -- without that exception,
+            # re-publishing an old tag while KEEP newer ones exist prunes the
+            # directory just written and reports success with URLs that 404.
+            local old others
+            mapfile -t others < <(
+              find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%f\n' \
+                | grep -Fxv -- "$TAG" | sort -rV
+            )
+            # One slot belongs to $TAG, so keep KEEP-1 of the others.
+            for old in "${others[@]:$((KEEP - 1))}"; do
+              echo "pruning $old"
+              rm -rf -- "$old"
+            done
+          }
+
+          # KEEP is lower than the gateway's 5 because a cockpit tag is much
+          # heavier: two boards x (15 MB merged + 4.5 MB ota) is ~39 MB per tag,
+          # where a gateway tag is a few MB. Three keeps the current release plus
+          # two to roll back to, for ~117 MB.
           #
           # Both kinds are mirrored even though the web flasher reads only
           # mergedWebUrl: the index derives otaWebUrl by rewriting the URL
           # without checking the file is there, so mirroring merged alone would
           # publish an otaWebUrl that 404s.
           KEEP=3
-          mapfile -t others < <(
-            find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%f\n' \
-              | grep -Fxv -- "$TAG" | sort -rV
-          )
-          # One slot belongs to $TAG, so keep KEEP-1 of the others.
-          for old in "${others[@]:$((KEEP - 1))}"; do
-            echo "pruning $old"
-            rm -rf -- "$old"
-          done
+          stage_tag
 
           # One commit, no history: the push replaces the branch wholesale, and
           # what it contains is everything above rather than this tag alone.
@@ -573,18 +573,7 @@ jobs:
             git fetch -q --depth 1 "$remote" release-assets
             git checkout -q FETCH_HEAD -- .
             base=$(git rev-parse FETCH_HEAD)
-            cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
-            rm -rf -- "${TAG:?}"
-            mkdir -p "$TAG"
-            cp "$staged"/*.bin "$TAG/"
-            mapfile -t others < <(
-              find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%f\n' \
-                | grep -Fxv -- "$TAG" | sort -rV
-            )
-            for old in "${others[@]:$((KEEP - 1))}"; do
-              echo "pruning $old"
-              rm -rf -- "$old"
-            done
+            stage_tag
           done
 
           # Only now did this run change the branch. The rollback step keys off
@@ -592,7 +581,11 @@ jobs:
           # was-absent marker are both recorded BEFORE the push, so a failure
           # between them and a successful push would otherwise have the rollback
           # rewind -- or delete -- a branch this run never modified.
-          touch "${RUNNER_TEMP}/release-assets-pushed"
+          # The commit this run put on the branch, and the tip it replaced. The
+          # rollback leases against the first so it cannot flatten a LATER run's
+          # push, and restores the second.
+          git rev-parse HEAD > "${RUNNER_TEMP}/release-assets-pushed"
+          printf '%s' "${base:-}" > "${RUNNER_TEMP}/release-assets-base"
 
           echo "published $TAG to the release-assets branch:"
           for f in "$TAG"/*.bin; do
@@ -647,13 +640,23 @@ jobs:
             echo "the mirror did not push; nothing to roll back"
             exit 0
           fi
+          pushed=$(cat "${RUNNER_TEMP}/release-assets-pushed")
 
+          # Every undo below leases against the commit THIS run pushed. If the
+          # branch has moved on since -- another release published while this one
+          # was failing -- the lease is rejected and their work stands, which is
+          # the right outcome: this step exists to remove one run's own mirror
+          # entry, not to win a race with whoever came after.
+          #
           # The branch did not exist before this run, so "restoring" it means
           # removing what this run created.
           if [ -f "${RUNNER_TEMP}/release-assets-was-absent" ]; then
             echo "release-assets did not exist before this run; deleting it"
-            git push -q --delete "$remote" release-assets \
-              || echo "::warning::could not delete release-assets"
+            git push -q --force-with-lease="release-assets:${pushed}" \
+              "$remote" :release-assets \
+              || echo "::warning::could not delete release-assets (it may have" \
+                      "moved on since this run pushed, in which case leaving it" \
+                      "alone is correct)"
             exit 0
           fi
 
@@ -664,5 +667,9 @@ jobs:
             exit 0
           fi
           cd "$snapshot"
-          git push -q --force "$remote" release-assets
+          git push -q --force-with-lease="release-assets:${pushed}" \
+            "$remote" HEAD:release-assets \
+            || echo "::warning::release-assets moved since this run pushed;" \
+                    "leaving it as it is rather than discarding a later" \
+                    "release's images"
           echo "release-assets restored to its state before this run"
