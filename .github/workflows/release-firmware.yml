@@ -269,6 +269,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Serialise releases per repository, because the mirror step below pushes one
+    # shared branch. This is an optimisation, NOT the safety guarantee: GitHub
+    # keeps at most ONE pending job per group, so three releases published close
+    # together mean the middle one is cancelled and attaches nothing -- and it
+    # never reaches its rollback step, because its job never started. That tag
+    # then needs re-running by hand (workflow_dispatch), which is safe to do
+    # because the push itself leases against the tip it read.
+    #
+    # cancel-in-progress stays false: cancelling the RUNNING job mid-push is how
+    # the branch ends up holding neither release.
+    concurrency:
+      group: release-assets-${{ github.repository }}
+      cancel-in-progress: false
     env:
       RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
@@ -318,10 +331,437 @@ jobs:
             echo "${delim}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: refuse a tag the mirror cannot lay out
+        env:
+          TAG: ${{ env.RELEASE_TAG }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            "" )
+              echo "::error::no tag to publish"; exit 1 ;;
+            */* | . | .. | -* )
+              echo "::error::tag '$TAG' cannot be a directory name on the" \
+                   "release-assets branch. Use a flat tag such as v1.2.3."
+              exit 1 ;;
+          esac
+          echo "tag '$TAG' is usable as a directory name"
+
+          # And it must name a release that exists. The mirror runs before the
+          # release step (so a release is never published without a
+          # browser-readable copy), which means a mistyped workflow_dispatch tag
+          # would otherwise mutate the shared branch -- and prune a real
+          # release's images to make room -- for a release that was never going
+          # to exist. On the `release:` trigger this is already true by
+          # construction; the check costs one API call and covers the manual
+          # path.
+          # stderr kept, not discarded: an expired token or a GitHub outage fails
+          # this the same way a missing release does, and "create the release
+          # first" is misleading advice for either. The reason is the difference
+          # between re-running and fixing the token.
+          if ! view_err=$(gh release view "$TAG" --repo "$REPO" 2>&1 >/dev/null); then
+            echo "::error::could not confirm release '$TAG' in ${REPO}: ${view_err}." \
+                 "If it does not exist, create it first or re-run for a tag that" \
+                 "does; if the call itself failed, this is safe to re-run."
+            exit 1
+          fi
+          echo "release '$TAG' exists"
+
+      - name: refuse an image too large to mirror
+        run: |
+          set -euo pipefail
+          for f in dist/*.bin; do
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt 52428800 ]; then
+              echo "::error::$(basename "$f") is $size bytes; too large to serve" \
+                   "from raw.githubusercontent. The flasher would 404."
+              exit 1
+            fi
+          done
+          echo "all images are within the size raw.githubusercontent serves"
+
+      # Publish the same images somewhere a BROWSER may read them.
+      #
+      # GitHub serves release downloads with no Access-Control-Allow-Origin, on
+      # the 302 and on the redirect target, so a web page cannot fetch them at
+      # all -- the hosted flasher could never download firmware from a release.
+      # raw.githubusercontent does send `access-control-allow-origin: *` and
+      # honours Range requests, so an orphan branch of this repository works as
+      # a CORS-readable mirror of what the release already carries.
+      #
+      # The branch is a publishing surface, not history: it carries one
+      # directory per tag and is rewritten as a single commit each time, so it
+      # never accumulates history even though it keeps several releases.
+      #
+      # It KEEPS older tags rather than holding only the newest, because this
+      # job can run for an old tag at any time -- `workflow_dispatch` takes a
+      # tag -- and a run that published only its own tag would delete a newer
+      # release's images. Publishing is therefore additive, and the oldest are
+      # pruned below so the branch stays bounded.
+      - name: mirror the images where a browser can read them
+        env:
+          TAG: ${{ env.RELEASE_TAG }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Under RUNNER_TEMP, not mktemp: the rollback step needs this
+          # repository's objects to restore the pre-push tip, and a path it can
+          # predict is the only way to reach them from another step.
+          work="${RUNNER_TEMP}/release-assets-work"
+          rm -rf "$work"; mkdir -p "$work"
+          staged=$PWD/dist
+
+          {
+            echo "# Browser-readable firmware"
+            echo
+            echo "Generated by \`release-firmware.yml\`; do not edit or merge."
+            echo
+            echo "These are the same images attached to release \`$TAG\`,"
+            echo "republished here because GitHub serves release downloads"
+            echo "without the CORS header a web page needs to read them. The"
+            echo "hosted flasher fetches them from raw.githubusercontent.com,"
+            echo "which does send it."
+            echo
+            echo "Force-pushed on every release. Holds the newest few tags,"
+            echo "the current one always among them; older directories are"
+            echo "pruned. The releases themselves remain the archive, so"
+            echo "firmware pruned from here is still downloadable from its"
+            echo "release."
+          } > "${RUNNER_TEMP}/release-assets-README.md"
+
+          remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+
+          # Start from what the branch already holds, so this run adds its own
+          # tag instead of replacing everyone else's. A missing branch (the
+          # first release) is the only case where there is nothing to fetch.
+          cd "$work"
+          git init -q -b release-assets
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Tell "the branch does not exist yet" apart from "the fetch
+          # failed". The first is the normal first release; the second means
+          # force-pushing over content we could not read, which is how a
+          # transient network or auth error deletes every other release's
+          # images. Neither the fetch nor the checkout may fail quietly.
+          # Only exit 2 means "no such branch"; 128 means the remote could not
+          # be reached at all. Treating those alike is how an auth or network
+          # failure force-pushes an empty branch over every release's images.
+          # Snapshot the tip this run is about to replace, for the rollback to
+          # push back, and record which commit that is.
+          #
+          # Re-taken on every retry, not once: a rejected lease means the branch
+          # moved, the retry reads a NEW base, and a snapshot still holding the old
+          # tip would have the rollback restore a state from before another
+          # release's tag existed -- deleting their directory while their release
+          # still points at it. Their webAssetsBranch URLs would 404.
+          #
+          # The clone is a second read of the branch, so it can land on a tip newer
+          # than $base. Verified rather than assumed: if they disagree the snapshot
+          # is unusable and dropped, because restoring the wrong commit is worse
+          # than not restoring at all.
+          snapshot="${RUNNER_TEMP}/release-assets-before"
+          take_snapshot() {
+            # Record the base FIRST, before anything that can fail. It answers a
+            # different question from the snapshot -- "did this branch exist when we
+            # read it" versus "can we put it back" -- and the rollback deletes the
+            # branch when there is no base. So a failed clone that skipped this
+            # write would have the rollback delete a branch that did exist, which
+            # is the worst outcome available here.
+            printf '%s' "${base:-}" > "${RUNNER_TEMP}/release-assets-base"
+            rm -rf "$snapshot"
+            # --single-branch, but NOT --depth: the snapshot has to be pushable,
+            # and a shallow clone of a no-history branch cannot be pushed back
+            # ("shallow update not allowed").
+            if ! git clone -q --single-branch --branch release-assets \
+                   "$remote" "$snapshot" 2>/dev/null; then
+              echo "::warning::could not snapshot release-assets; a failure after" \
+                   "the push will leave the mirror advertising $TAG"
+              return 0
+            fi
+            local snaphead
+            snaphead=$(git -C "$snapshot" rev-parse HEAD)
+            if [ "$snaphead" != "${base:-}" ]; then
+              echo "::warning::release-assets moved between reading it ($base) and" \
+                   "snapshotting it ($snaphead); discarding the snapshot rather" \
+                   "than risking a rollback to the wrong commit"
+              rm -rf "$snapshot"
+              return 0
+            fi
+          }
+
+          set +e
+          git ls-remote --exit-code --heads "$remote" release-assets >/dev/null 2>&1
+          lsr=$?
+          set -e
+          case "$lsr" in
+            0)
+              echo "release-assets exists; restoring it before adding $TAG"
+              git fetch -q --depth 1 "$remote" release-assets
+              git checkout -q FETCH_HEAD -- .
+              # The tip this run started from. The push below leases against it,
+              # so a concurrent run that pushed in between is detected instead of
+              # overwritten.
+              base=$(git rev-parse FETCH_HEAD)
+              # Cloned, not pushed from this repository: the fetch above is
+              # --depth 1 and the branch is force-pushed with no history, so the
+              # pre-push commit is not an ancestor of anything and pushing it is
+              # refused as a shallow update ("shallow update not allowed" --
+              # reproduced). A clone carries the objects in a pushable shape.
+              take_snapshot
+              echo "existing tags on the branch:"
+              find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' \
+                -printf '  %f\n' | sort -V
+              ;;
+            2)
+              echo "release-assets does not exist yet; creating it"
+              # No base is recorded for a branch that did not exist, which is
+              # how the rollback tells "delete what this run created" from
+              # "restore what it replaced".
+              ;;
+            *)
+              echo "::error::could not reach ${REPO} to read release-assets" \
+                   "(git ls-remote exited $lsr). Refusing to publish, because" \
+                   "force-pushing now would delete the other releases' images."
+              exit 1
+              ;;
+          esac
+
+          # Re-stage this tag's images over whatever was there, so re-running a
+          # release replaces its own directory and leaves the others alone.
+          #
+          # A function because the retry below has to redo exactly this from the
+          # new tip: two copies of the staging and the prune drifted apart the
+          # moment one of them was fixed.
+          stage_tag() {
+            cp "${RUNNER_TEMP}/release-assets-README.md" ./README.md
+            rm -rf -- "${TAG:?}"
+            mkdir -p "$TAG"
+            cp "$staged"/*.bin "$TAG/"
+            # Keep the branch bounded: the newest KEEP tags by VERSION order, not
+            # by when they were published, or v0.10.0 would prune before v0.6.0.
+            # ALWAYS keep the tag this run publishes -- without that exception,
+            # re-publishing an old tag while KEEP newer ones exist prunes the
+            # directory just written and reports success with URLs that 404.
+            local old others
+            mapfile -t others < <(
+              find . -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%f\n' \
+                | grep -Fxv -- "$TAG" | sort -rV
+            )
+            # One slot belongs to $TAG, so keep KEEP-1 of the others.
+            for old in "${others[@]:$((KEEP - 1))}"; do
+              echo "pruning $old"
+              rm -rf -- "$old"
+            done
+          }
+
+          # KEEP is lower than the gateway's 5 because a cockpit tag is much
+          # heavier: two boards x (15 MB merged + 4.5 MB ota) is ~39 MB per tag,
+          # where a gateway tag is a few MB. Three keeps the current release plus
+          # two to roll back to, for ~117 MB.
+          #
+          # Both kinds are mirrored even though the web flasher reads only
+          # mergedWebUrl: the index derives otaWebUrl by rewriting the URL
+          # without checking the file is there, so mirroring merged alone would
+          # publish an otaWebUrl that 404s.
+          KEEP=3
+          stage_tag
+
+          # One commit, no history: the push replaces the branch wholesale, and
+          # what it contains is everything above rather than this tag alone.
+          #
+          # --force-with-lease, not --force: the concurrency group above keeps two
+          # runs from pushing at once, but it is not a guarantee. GitHub holds at
+          # most ONE pending job per group, so a third release entering the queue
+          # cancels the second -- which would then attach nothing and never reach
+          # the rollback step, because its job never started. Anyone re-running
+          # that tag by hand is then racing whatever has published since. The
+          # lease makes the push itself safe: if the branch moved under us the
+          # push is rejected rather than silently discarding the other run's tag,
+          # and we redo the whole fetch/stage/prune from the new tip.
+          stage_and_push() {
+            git add -A
+            git commit -q -m "firmware for $TAG"
+            # Record the commit BEFORE pushing it, not after the loop succeeds. A
+            # run cancelled or timed out mid-push may have landed it, and the
+            # rollback needs this SHA to lease against; written afterwards, that
+            # case left no marker and the rollback skipped a branch this run had
+            # already changed. Recording a commit that never reached the remote is
+            # harmless by comparison: the rollback's lease is then stale, so it is
+            # refused and nothing is touched.
+            git rev-parse HEAD > "${RUNNER_TEMP}/release-assets-pushed"
+            if [ -n "${base:-}" ]; then
+              git push -q --force-with-lease="release-assets:${base}" \
+                "$remote" HEAD:release-assets
+            else
+              # First publish. An empty lease means "expect the branch not to
+              # exist", so a branch created meanwhile is a rejection rather than
+              # something this run flattens.
+              git push -q --force-with-lease="release-assets:" \
+                "$remote" HEAD:release-assets
+            fi
+          }
+
+          attempt=1
+          until stage_and_push; do
+            # Why did the push fail? Retrying is only right when the branch MOVED:
+            # a rejected lease. A network blip, a revoked token or a hook refusal
+            # fails the same command, and looping three times over one of those
+            # ends in a message blaming concurrency for something else entirely.
+            #
+            # Ask the remote. If its tip is still $base nothing moved, so the
+            # failure was something else and re-staging cannot help.
+            remote_tip=$(git ls-remote "$remote" refs/heads/release-assets 2>/dev/null \
+                           | cut -f1)
+            if [ -z "$remote_tip" ]; then
+              echo "::error::the push failed and release-assets could not be read" \
+                   "afterwards, so this is not a lease rejection. Refusing to retry."
+              exit 1
+            fi
+            if [ "$remote_tip" = "${base:-}" ]; then
+              echo "::error::the push failed but release-assets is still at" \
+                   "${remote_tip} -- nothing moved, so this is not a lease" \
+                   "rejection. Check the log above for the real reason (auth," \
+                   "network, a protected branch)."
+              exit 1
+            fi
+            if [ "$remote_tip" = "$(git rev-parse HEAD)" ]; then
+              # The push landed and the error came afterwards. Retrying would
+              # rewrite our own commit for no reason.
+              echo "release-assets is already at this run's commit; treating the" \
+                   "push as successful."
+              break
+            fi
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::release-assets moved under this run 3 times;" \
+                   "giving up rather than discarding another release's images."
+              exit 1
+            fi
+            echo "::warning::release-assets moved since this run read it" \
+                 "(now ${remote_tip}, attempt $attempt); re-reading and re-staging."
+            attempt=$((attempt + 1))
+            # Start over from the new tip. Discard this run's commit entirely
+            # rather than reset --soft HEAD~1: on the first attempt the commit
+            # has no parent, so HEAD~1 does not resolve and the command errors
+            # (harmlessly, but it looks like a real failure in the log). An
+            # orphan branch has no history worth keeping here -- the push is a
+            # wholesale replacement either way.
+            # Unique per attempt: `git checkout --orphan` fails with "a branch
+            # named 'rebuild' already exists" the second time round, so a fixed
+            # name turns the third attempt into a hard error before it can even
+            # retry. Reproduced locally.
+            git checkout -q --orphan "rebuild-$attempt"
+            git rm -rq --cached . >/dev/null 2>&1 || true
+            find . -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+            git fetch -q --depth 1 "$remote" release-assets
+            git checkout -q FETCH_HEAD -- .
+            base=$(git rev-parse FETCH_HEAD)
+            # The branch moved, so the old snapshot is stale -- see take_snapshot.
+            take_snapshot
+            stage_tag
+          done
+
+          echo "published $TAG to the release-assets branch:"
+          for f in "$TAG"/*.bin; do
+            echo "  https://raw.githubusercontent.com/${REPO}/release-assets/${TAG}/$(basename "$f")"
+          done
+
+      # If attaching the assets fails after the mirror has published, the
+      # branch advertises images for a release that has none. Roll the mirror
+      # back to what it held before this run, so the two never disagree.
+      #
+      # Only ever on failure, and only for this tag: it re-pushes the commit the
+      # mirror step recorded as the branch's tip before it pushed.
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          # Named explicitly: on a call there is no release event to read it from.
+          # Named explicitly: on a workflow_call there is no release event.
           tag_name: ${{ env.RELEASE_TAG }}
+          # Fail rather than publish a release missing a chip's firmware: a
+          # silently incomplete release is worse than a failed one, because the
+          # registry would index it and offer owners of that chip nothing.
           fail_on_unmatched_files: true
           files: dist/*.bin
           body: ${{ steps.notes.outputs.body }}
+
+      # Any failure after the mirror pushed, not only a failed attach. The
+      # narrower `steps.attach.outcome == 'failure'` missed the case it most
+      # needed to catch: if the mirror step pushes and then fails on a later
+      # line, `attach` is SKIPPED rather than failed, so the branch was left
+      # advertising a tag whose release has no assets -- exactly the state this
+      # step exists to undo.
+      #
+      # Safe to widen because this is the last step and every undo it does is
+      # leased. stage_and_push writes the marker just BEFORE its push, so a
+      # failure earlier than that leaves none and the step exits without touching
+      # anything; a marker naming a commit that never reached the remote is a
+      # stale lease, which the remote refuses, so that case is a no-op too.
+      - name: roll the mirror back if anything after it failed
+        # Cancellation too, not only failure: a run cancelled by hand, or timed
+        # out, AFTER the mirror pushed leaves the branch advertising a tag whose
+        # release has no assets -- the same mess a failure leaves.
+        #
+        # Not the queue-dropped case, which this cannot recover: a job GitHub
+        # cancels while still pending never started, so it never pushed and this
+        # step never runs. That tag needs re-running by hand (see the concurrency
+        # comment above). The marker check below is what makes the distinction --
+        # no push, nothing to undo.
+        if: failure() || cancelled()
+        env:
+          TAG: ${{ env.RELEASE_TAG }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          # Nothing to undo unless the mirror got as far as pushing. The marker is
+          # written just before the push, so a run that failed earlier -- a bad
+          # tag, an oversized image, an unreadable branch -- leaves none and this
+          # exits without touching anything. A run that failed just after writing
+          # it but before the push landed leaves a stale lease, so the undo below
+          # is refused and is likewise a no-op.
+          if [ ! -f "${RUNNER_TEMP}/release-assets-pushed" ]; then
+            echo "the mirror did not push; nothing to roll back"
+            exit 0
+          fi
+          pushed=$(cat "${RUNNER_TEMP}/release-assets-pushed")
+          base=$(cat "${RUNNER_TEMP}/release-assets-base" 2>/dev/null || true)
+
+          # Every undo below leases against the commit THIS run pushed. If the
+          # branch has moved on since -- another release published while this one
+          # was failing -- the lease is rejected, their work stands, and that is
+          # the right outcome: this step removes one run's own mirror entry, it
+          # does not win a race with whoever came after.
+
+          # No base means the branch did not exist before this run, so "restoring"
+          # it means removing what this run created.
+          if [ -z "$base" ]; then
+            echo "release-assets did not exist before this run; deleting it"
+            git push -q --force-with-lease="release-assets:${pushed}" \
+              "$remote" :release-assets \
+              || echo "::warning::could not delete release-assets (it may have" \
+                      "moved on since this run pushed, in which case leaving it" \
+                      "alone is correct)"
+            exit 0
+          fi
+
+          # Restore what this run replaced, from the clone taken before the push.
+          snapshot="${RUNNER_TEMP}/release-assets-before"
+          if [ ! -d "$snapshot/.git" ]; then
+            echo "::warning::no pre-push snapshot to restore; the release-assets" \
+                 "branch may advertise $TAG with no assets attached to the release."
+            exit 0
+          fi
+          cd "$snapshot"
+          # The success line belongs inside the branch: printing it after a `||`
+          # meant a refused lease logged the warning AND "restored", and whoever
+          # reads this log is deciding whether to repair the mirror by hand.
+          if git push -q --force-with-lease="release-assets:${pushed}" \
+               "$remote" HEAD:release-assets; then
+            echo "release-assets restored to ${base}, its state before this run"
+          else
+            echo "::warning::release-assets moved since this run pushed;" \
+                 "leaving it as it is rather than discarding a later" \
+                 "release's images"
+          fi
