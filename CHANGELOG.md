@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.2...v1.4.0) (2026-09-27)
+
+
+### Added
+
+* **release:** mirror the images where a browser can read them ([#143](https://github.com/dirkwa/espos-p4-cockpit/issues/143)) ([b2f7807](https://github.com/dirkwa/espos-p4-cockpit/commit/b2f780799caf5021553e3a462b862bf743f14a38))
+
 ## [1.3.2](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.1...v1.3.2) (2026-09-21)
 
 
