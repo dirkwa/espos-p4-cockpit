@@ -594,13 +594,41 @@ jobs:
 
           attempt=1
           until stage_and_push; do
+            # Why did the push fail? Retrying is only right when the branch MOVED:
+            # a rejected lease. A network blip, a revoked token or a hook refusal
+            # fails the same command, and looping three times over one of those
+            # ends in a message blaming concurrency for something else entirely.
+            #
+            # Ask the remote. If its tip is still $base nothing moved, so the
+            # failure was something else and re-staging cannot help.
+            remote_tip=$(git ls-remote "$remote" refs/heads/release-assets 2>/dev/null \
+                           | cut -f1)
+            if [ -z "$remote_tip" ]; then
+              echo "::error::the push failed and release-assets could not be read" \
+                   "afterwards, so this is not a lease rejection. Refusing to retry."
+              exit 1
+            fi
+            if [ "$remote_tip" = "${base:-}" ]; then
+              echo "::error::the push failed but release-assets is still at" \
+                   "${remote_tip} -- nothing moved, so this is not a lease" \
+                   "rejection. Check the log above for the real reason (auth," \
+                   "network, a protected branch)."
+              exit 1
+            fi
+            if [ "$remote_tip" = "$(git rev-parse HEAD)" ]; then
+              # The push landed and the error came afterwards. Retrying would
+              # rewrite our own commit for no reason.
+              echo "release-assets is already at this run's commit; treating the" \
+                   "push as successful."
+              break
+            fi
             if [ "$attempt" -ge 3 ]; then
               echo "::error::release-assets moved under this run 3 times;" \
                    "giving up rather than discarding another release's images."
               exit 1
             fi
             echo "::warning::release-assets moved since this run read it" \
-                 "(attempt $attempt); re-reading and re-staging."
+                 "(now ${remote_tip}, attempt $attempt); re-reading and re-staging."
             attempt=$((attempt + 1))
             # Start over from the new tip. Discard this run's commit entirely
             # rather than reset --soft HEAD~1: on the first attempt the commit
