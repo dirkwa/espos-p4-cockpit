@@ -222,15 +222,18 @@ jobs:
       # The OTA asset carries the version because that is what a device is
       # pointed at by URL; the merged image is the USB/full-flash one.
       - name: Stage release assets
-        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
+        if: >-
+          env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'pull_request'
         env:
           # Via env, not ${{ }}: a tag name is arbitrary text and would
           # otherwise be pasted into this script before bash parses it.
           TAG: ${{ env.RELEASE_TAG }}
           BOARD: ${{ matrix.board }}
         run: |
-          # Manual runs are not releases: tag them with the commit so two
-          # dispatch builds are never indistinguishable on disk.
+          # Manual and PR builds are not releases: tag them with the commit so
+          # two such builds are never indistinguishable on disk. A PR's images
+          # are the ones to test-flash before merging it.
           VERSION="${TAG:-$(cat version.txt)-g$(git rev-parse --short HEAD)}"
           case "$VERSION" in
             *[!A-Za-z0-9._-]*) echo "::error::refusing unsafe tag '$VERSION'"; exit 1 ;;
@@ -245,7 +248,9 @@ jobs:
           ls -l dist/
 
       - name: Upload build artifact
-        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
+        if: >-
+          env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           # Per board: two matrix legs uploading one name is an error on
