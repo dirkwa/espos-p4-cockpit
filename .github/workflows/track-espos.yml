@@ -95,8 +95,10 @@ jobs:
           # branch: a declined bump is not reopened daily, even after its
           # branch was deleted along with the PR. Only PRs from this repository
           # count: a fork's branch of the same name is not this workflow's.
+          # --limit before the filter: gh returns 30 by default, and a match
+          # past that would read as "no PR" and reopen a declined bump.
           PRS=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "track-espos-$TAG" \
-                  --state all --json number,isCrossRepository \
+                  --state all --limit 1000 --json number,isCrossRepository \
                   --jq 'map(select(.isCrossRepository == false)) | length')
           if [ "$PRS" -gt 0 ]; then
             skip "track-espos-$TAG already has a PR."
