@@ -91,13 +91,15 @@ jobs:
           if [ "$PINNED" = "$TARGET" ]; then
             skip "Already pinned to $TAG ($TARGET)."
           fi
+          # Closed counts too, and is looked up by head name rather than by
+          # branch: a declined bump is not reopened daily, even after its
+          # branch was deleted along with the PR.
+          PRS=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "track-espos-$TAG" \
+                  --state all --json number --jq length)
+          if [ "$PRS" -gt 0 ]; then
+            skip "track-espos-$TAG already has a PR."
+          fi
           if git ls-remote --exit-code --heads origin "track-espos-$TAG" >/dev/null; then
-            # Closed counts too: a bump someone declined is not reopened daily.
-            PRS=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "track-espos-$TAG" \
-                    --state all --json number --jq length)
-            if [ "$PRS" -gt 0 ]; then
-              skip "track-espos-$TAG already has a PR."
-            fi
             # A branch with no PR is what a run that failed after its push
             # leaves behind. Nobody can have reviewed it, and skipping on it
             # would stall this release for good, so start over.
