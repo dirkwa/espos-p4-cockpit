@@ -17,6 +17,12 @@
 # firmware build is dispatched on the tracking branch instead: its runs attach
 # to the branch head and show up as checks on the PR, and the merged images it
 # uploads are the ones to test-flash.
+#
+# That last sentence is load-bearing, and release-firmware.yml signs a dispatched
+# build with the real key for exactly this reason: an image someone will flash to
+# a panel must carry the key that panel will need for its next OTA. A throwaway
+# key installs fine and then rejects every OTA afterwards, on the boat, so do not
+# narrow that signing condition back to releases only.
 name: Track espOS releases
 
 # One run at a time: a scheduled and a manual run overlapping could both see no
