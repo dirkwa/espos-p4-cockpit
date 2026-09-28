@@ -3,26 +3,28 @@
 # panel firmware picks up espOS fixes without anyone having to notice a release.
 #
 # It opens the PR and stops there. A submodule bump changes the binary that goes
-# on a boat, so a human merges it after the build below is green and, where it
-# matters, after flashing the build artifact to a panel. Merging makes
-# release-please propose the next cockpit release as usual.
+# on a boat, so a human merges it after the PR's firmware build is green and,
+# where it matters, after flashing that build's artifact to a panel. Merging
+# makes release-please propose the next cockpit release as usual.
 #
 # A submodule never moves on its own, and Dependabot's gitsubmodule ecosystem is
 # no substitute: it follows the tip of espOS main rather than release tags, and
 # never touches dependencies.lock, which carries a version for every espOS
 # component and moves on every bump.
 #
-# The PR is opened with the workflow token, and a PR opened that way fires no
-# pull_request workflows. workflow_dispatch is the documented exception, so the
-# firmware build is dispatched on the tracking branch instead: its runs attach
-# to the branch head and show up as checks on the PR, and the merged images it
-# uploads are the ones to test-flash.
+# The PR is opened with a GitHub App's token (RELEASE_APP_ID and
+# RELEASE_APP_PRIVATE_KEY), because GitHub holds the checks of a PR opened with
+# the workflow token until a maintainer approves them, while an App's PR runs
+# them at once. Without those secrets -- a fork, say -- it falls back to the
+# workflow token, whose PR checks wait for that approval, so the firmware build
+# is dispatched on the branch instead and runs without waiting.
 #
-# That last sentence is load-bearing, and release-firmware.yml signs a dispatched
-# build with the real key for exactly this reason: an image someone will flash to
-# a panel must carry the key that panel will need for its next OTA. A throwaway
-# key installs fine and then rejects every OTA afterwards, on the boat, so do not
-# narrow that signing condition back to releases only.
+# Either way the images someone test-flashes come out of this, so
+# release-firmware.yml signs both event kinds with the real key: an image that
+# goes on a panel must carry the key that panel will need for its next OTA. A
+# throwaway key installs fine and then rejects every OTA afterwards, on the boat.
+# Do not narrow that signing condition -- it covers `pull_request` for the App
+# path and `workflow_dispatch` for the fallback, and each is a path to a panel.
 name: Track espOS releases
 
 # One run at a time: a scheduled and a manual run overlapping could both see no
@@ -45,12 +47,15 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  # To dispatch release-firmware.yml on the tracking branch.
-  actions: write
 
 jobs:
   track:
     runs-on: ubuntu-latest
+    env:
+      # A flag, because a step's `if` cannot read secrets. Only the flag: the
+      # key itself in the job environment would reach every step.
+      APP_CONFIGURED: >-
+        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       # fetch-depth: 0 so the submodule has its history: whether the release is
       # newer than the pin is answered by ancestry, which needs both commits.
@@ -233,10 +238,23 @@ jobs:
           print("EOF")
           PY
 
-      - name: Open the tracking PR and build it
+      # Created only now: the token lives an hour, and the steps above take a
+      # few minutes of that.
+      - name: Get the App token for the PR
+        id: app-token
+        if: steps.target.outputs.skip == 'false' && env.APP_CONFIGURED == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open the tracking PR
         if: steps.target.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          AS_APP: ${{ steps.app-token.outputs.token != '' }}
           TAG: ${{ steps.target.outputs.tag }}
           PINNED: ${{ steps.target.outputs.pinned }}
           IDF_MOVED: ${{ steps.bump.outputs.idf_moved }}
@@ -294,11 +312,14 @@ jobs:
             fi
             echo "### Checks"
             echo
-            echo "The firmware build for both panels is dispatched on this branch and shows up as checks here. Each run uploads \`merged-firmware-7b\` and \`merged-firmware-x7\` for test-flashing."
+            if [ "$AS_APP" = true ]; then
+              echo "The firmware build for both panels runs as this PR's checks. Each board's run uploads \`merged-firmware-<board>\` for test-flashing."
+            else
+              echo "Opened with the workflow token, so GitHub holds this PR's checks until a maintainer approves them (**Approve workflows to run**). The firmware build for both panels then runs, and each board's run uploads \`merged-firmware-<board>\` for test-flashing."
+            fi
             echo
             echo "Opened by \`.github/workflows/track-espos.yml\` ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
           } > "$BODY"
 
           gh pr create --head "$BRANCH" --base main \
             --title "fix: bump espOS to $TAG" --body-file "$BODY"
-          gh workflow run release-firmware.yml --ref "$BRANCH"

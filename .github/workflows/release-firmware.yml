@@ -123,17 +123,25 @@ jobs:
       # key installs fine over USB and then rejects every future OTA, on the
       # device, long after CI went green.
       #
-      # Dispatched runs are included, and that is the point of this condition
-      # rather than `RELEASE_TAG != ''` alone. The artifact steps below already
-      # upload on a dispatch, because track-espos.yml dispatches this workflow on
-      # its bump branch and calls the images "the ones to test-flash" -- so those
-      # images reach a panel, and until they were signed here they reached it with
-      # a key that existed only inside that run. Flashing one stranded the panel:
-      # every later OTA was rejected with ESP_ERR_OTA_VALIDATE_FAILED, which is
-      # discoverable only on the boat. Found by doing exactly that, espOS v0.12.0.
+      # This condition tracks the artifact steps below, and must keep tracking
+      # them: every event that uploads an image is an event whose image somebody
+      # flashes. track-espos.yml produces its bump images as a `pull_request` when
+      # the App token is configured and as a `workflow_dispatch` when it falls
+      # back, and both are called "the ones to test-flash".
+      #
+      # Until a dispatch was signed here it reached a panel carrying a key that
+      # existed only inside that run. Flashing one stranded the panel: every later
+      # OTA was rejected with ESP_ERR_OTA_VALIDATE_FAILED, which is discoverable
+      # only on the boat. Found by doing exactly that, espOS v0.12.0.
+      #
+      # A `pull_request` from a fork gets no secrets, so those builds take the
+      # warn-and-continue path below rather than failing -- which is right, since a
+      # fork cannot be handed the signing key anyway.
       - name: restore signing key
         id: signing
-        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
+        if: >-
+          env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'pull_request'
         env:
           KEY: ${{ secrets.COCKPIT_SIGNING_KEY_PEM }}
           ALLOW_UNSIGNED: ${{ vars.COCKPIT_ALLOW_UNSIGNED_RELEASE }}
@@ -246,15 +254,18 @@ jobs:
       # The OTA asset carries the version because that is what a device is
       # pointed at by URL; the merged image is the USB/full-flash one.
       - name: Stage release assets
-        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
+        if: >-
+          env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'pull_request'
         env:
           # Via env, not ${{ }}: a tag name is arbitrary text and would
           # otherwise be pasted into this script before bash parses it.
           TAG: ${{ env.RELEASE_TAG }}
           BOARD: ${{ matrix.board }}
         run: |
-          # Manual runs are not releases: tag them with the commit so two
-          # dispatch builds are never indistinguishable on disk.
+          # Manual and PR builds are not releases: tag them with the commit so
+          # two such builds are never indistinguishable on disk. A PR's images
+          # are the ones to test-flash before merging it.
           VERSION="${TAG:-$(cat version.txt)-g$(git rev-parse --short HEAD)}"
           case "$VERSION" in
             *[!A-Za-z0-9._-]*) echo "::error::refusing unsafe tag '$VERSION'"; exit 1 ;;
@@ -269,7 +280,9 @@ jobs:
           ls -l dist/
 
       - name: Upload build artifact
-        if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
+        if: >-
+          env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           # Per board: two matrix legs uploading one name is an error on

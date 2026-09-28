@@ -7,6 +7,15 @@
 # GitHub never lets such an event start another workflow -- so the
 # firmware build, signing and asset upload are called directly rather
 # than left to release-firmware.yml's `release:` trigger.
+#
+# The release PR, though, is opened with a GitHub App's token
+# (RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY): GitHub holds the checks of
+# a PR opened with the workflow token until a maintainer approves them,
+# while an App's PR runs them at once. So release-please runs twice, the
+# release with the workflow token and the PR with the App's. A release
+# published by the App would also fire the `release:` trigger and build
+# the firmware a second time. Without the secrets the PR falls back to
+# the workflow token, and its checks wait for approval.
 name: release-please
 
 on:
@@ -20,6 +29,11 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    env:
+      # A flag, because a step's `if` cannot read secrets. Only the flag: the
+      # key itself in the job environment would reach every step.
+      APP_CONFIGURED: >-
+        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
@@ -29,6 +43,24 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+
+      - name: Get the App token for the release PR
+        id: app-token
+        if: env.APP_CONFIGURED == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
   firmware:
     needs: release-please
