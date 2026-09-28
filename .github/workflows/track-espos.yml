@@ -1,0 +1,292 @@
+# Follows espOS releases. When espOS cuts vX.Y.Z, this opens a PR that moves
+# the `espos` submodule to that tag and regenerates dependencies.lock, so the
+# panel firmware picks up espOS fixes without anyone having to notice a release.
+#
+# It opens the PR and stops there. A submodule bump changes the binary that goes
+# on a boat, so a human merges it after the build below is green and, where it
+# matters, after flashing the build artifact to a panel. Merging makes
+# release-please propose the next cockpit release as usual.
+#
+# A submodule never moves on its own, and Dependabot's gitsubmodule ecosystem is
+# no substitute: it follows the tip of espOS main rather than release tags, and
+# never touches dependencies.lock, which carries a version for every espOS
+# component and moves on every bump.
+#
+# The PR is opened with the workflow token, and a PR opened that way fires no
+# pull_request workflows. workflow_dispatch is the documented exception, so the
+# firmware build is dispatched on the tracking branch instead: its runs attach
+# to the branch head and show up as checks on the PR, and the merged images it
+# uploads are the ones to test-flash.
+name: Track espOS releases
+
+# One run at a time: a scheduled and a manual run overlapping could both see no
+# tracking branch and race to push one.
+concurrency:
+  group: track-espos
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Daily. espOS lives in another organisation, so it cannot notify this
+    # repository without a cross-org token; a day's delay costs nothing.
+    - cron: '20 5 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "espOS tag to move to (default: the latest release)"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  # To dispatch release-firmware.yml on the tracking branch.
+  actions: write
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 so the submodule has its history: whether the release is
+      # newer than the pin is answered by ancestry, which needs both commits.
+      # No persisted credentials: the IDF step below runs a third-party
+      # container over this workspace, and a token in .git/config would hand it
+      # write access to the repository. The push passes the token explicitly.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Determine the espOS release to track
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-}"
+          EXPLICIT=yes
+          if [ -z "$TAG" ]; then
+            EXPLICIT=no
+            # releases/latest skips prereleases and drafts: a panel follows
+            # stable espOS only. A prerelease can still be taken by naming it.
+            TAG=$(gh api repos/signalk-espOS/espOS/releases/latest --jq .tag_name)
+          fi
+          # Anchored: a case glob's `*` also matches `/`, `^` and `..`, and the
+          # tag becomes part of a branch name and a revision expression below.
+          # The prerelease suffix is reachable only by naming a tag by hand.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          git -C espos fetch --quiet --tags origin
+          PINNED=$(git rev-parse HEAD:espos)
+          TARGET=$(git -C espos rev-parse "$TAG^{commit}")
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+
+          skip() { echo "$1"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          if [ "$PINNED" = "$TARGET" ]; then
+            skip "Already pinned to $TAG ($TARGET)."
+          fi
+          if git ls-remote --exit-code --heads origin "track-espos-$TAG" >/dev/null; then
+            # Closed counts too: a bump someone declined is not reopened daily.
+            PRS=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "track-espos-$TAG" \
+                    --state all --json number --jq length)
+            if [ "$PRS" -gt 0 ]; then
+              skip "track-espos-$TAG already has a PR."
+            fi
+            # A branch with no PR is what a run that failed after its push
+            # leaves behind. Nobody can have reviewed it, and skipping on it
+            # would stall this release for good, so start over.
+            echo "Removing track-espos-$TAG, left without a PR by an earlier run."
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/track-espos-$TAG"
+          fi
+          # Never move backwards, or sideways, on its own: the pin may sit ahead
+          # of the newest release on a commit from espOS main. Ancestry rather
+          # than dates, because a tag's date says nothing about what it
+          # contains. A tag named by hand bypasses this, so a deliberate
+          # rollback stays possible.
+          if [ "$EXPLICIT" = no ] && ! git -C espos merge-base --is-ancestor "$PINNED" "$TARGET"; then
+            skip "$TAG does not contain the pinned espOS commit $PINNED; not moving automatically."
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Move the submodule
+        id: bump
+        if: steps.target.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          OLD_IDF=$(cat .idf-version)
+          git -C espos checkout --quiet "$TAG"
+          NEW_IDF=$(cat espos/.idf-version)
+          # espOS's prologue refuses to configure when the two disagree, and CI
+          # reads .idf-version with no fallback: bump it, never delete it.
+          if [ "$OLD_IDF" != "$NEW_IDF" ]; then
+            printf '%s\n' "$NEW_IDF" > .idf-version
+            # The IDF version is also written out by hand in a few places.
+            # They do not break the build, so they are listed for the reviewer
+            # rather than rewritten blindly.
+            STALE=$(grep -nF -- "${OLD_IDF#v}" CMakeLists.txt README.md AGENTS.md || true)
+            {
+              echo "idf_moved=true"
+              echo "old_idf=$OLD_IDF"
+              echo "new_idf=$NEW_IDF"
+              echo "stale<<EOF"
+              echo "$STALE"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "idf_moved=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "idf=$NEW_IDF" >> "$GITHUB_OUTPUT"
+
+      # Re-resolves the lock against the new espOS manifests. Every espOS
+      # component carries its own version and ^X.Y.Z inter-dependencies, so the
+      # lock cannot be patched by hand. reconfigure rather than
+      # update-dependencies: the latter would also take every newer registry
+      # component the ranges allow, which is dependency-drift.yml's job.
+      - name: Regenerate dependencies.lock
+        if: steps.target.outputs.skip == 'false'
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1 branch head
+        with:
+          esp_idf_version: ${{ steps.bump.outputs.idf }}
+          target: esp32p4
+          command: idf.py reconfigure
+
+      # A changed espOS manifest makes the component manager solve again, and a
+      # new solve can also move registry components that espOS does not own
+      # (esp-dl, for one, moved with espOS v0.11.0). That is not wrong, but it
+      # changes the binary beyond espOS, so the PR names it for the reviewer.
+      - name: Name lock changes outside espOS
+        id: drift
+        if: steps.target.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          git show HEAD:dependencies.lock > "$RUNNER_TEMP/lock.old"
+          python3 - "$RUNNER_TEMP/lock.old" dependencies.lock <<'PY' >> "$GITHUB_OUTPUT"
+          import re, sys
+
+          # Same shape as dependency-drift.yml parses: a component key at two
+          # spaces, its own fields at four. Deeper `version:` lines are
+          # dependency requirements and are left out.
+          KEY = re.compile(r"^  ([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?):\s*$")
+          FIELD = re.compile(r"^    (version|component_hash):\s*(.+?)\s*$")
+          OUTDENT = re.compile(r"^ {0,2}\S")
+
+          def deps(path):
+              out, cur, started = {}, None, False
+              for line in open(path):
+                  line = line.rstrip("\n")
+                  if line.startswith("dependencies:"):
+                      started = True
+                      continue
+                  if not started:
+                      continue
+                  if line and not line.startswith(" "):
+                      break
+                  m = KEY.match(line)
+                  if m:
+                      cur = m.group(1)
+                      out.setdefault(cur, {})
+                      continue
+                  m = FIELD.match(line)
+                  if m and cur:
+                      out[cur][m.group(1)] = m.group(2).strip("'\"")
+                      continue
+                  if line.strip() and OUTDENT.match(line):
+                      cur = None
+              return out
+
+          old, new = deps(sys.argv[1]), deps(sys.argv[2])
+          lines = []
+          for k in sorted(set(old) | set(new)):
+              if k.startswith("signalk-espos/"):
+                  continue
+              o, n = old.get(k), new.get(k)
+              if o is None:
+                  lines.append(f"+ {k} {n.get('version', '?')}")
+              elif n is None:
+                  lines.append(f"- {k} {o.get('version', '?')}")
+              elif o.get("version") != n.get("version"):
+                  lines.append(f"~ {k} {o.get('version', '?')} -> {n.get('version', '?')}")
+              elif o.get("component_hash") != n.get("component_hash"):
+                  lines.append(f"! {k} {n.get('version', '?')} republished")
+          print("changed<<EOF")
+          print("\n".join(lines))
+          print("EOF")
+          PY
+
+      - name: Open the tracking PR and build it
+        if: steps.target.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.target.outputs.tag }}
+          PINNED: ${{ steps.target.outputs.pinned }}
+          IDF_MOVED: ${{ steps.bump.outputs.idf_moved }}
+          OLD_IDF: ${{ steps.bump.outputs.old_idf }}
+          NEW_IDF: ${{ steps.bump.outputs.new_idf }}
+          STALE: ${{ steps.bump.outputs.stale }}
+          DRIFT: ${{ steps.drift.outputs.changed }}
+        run: |
+          set -euo pipefail
+          BRANCH="track-espos-$TAG"
+          OLD_DESC=$(git -C espos describe --tags "$PINNED" 2>/dev/null || echo "${PINNED:0:7}")
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # Named paths only: reconfigure leaves sdkconfig, build/ and a
+          # throwaway signing key behind, all ignored, and none belong here.
+          git add espos dependencies.lock .idf-version
+          # fix: so release-please cuts a patch release once this merges.
+          git commit --quiet -m "fix: bump espOS to $TAG" \
+            -m "Moves the espos submodule from $OLD_DESC to $TAG and regenerates dependencies.lock."
+          git push --quiet \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "$BRANCH"
+
+          # Built as a file, never interpolated into a shell string: the drift
+          # list and the stale lines are text from files in the tree.
+          BODY="$RUNNER_TEMP/body.md"
+          {
+            echo "Moves espOS from \`$OLD_DESC\` to [\`$TAG\`](https://github.com/signalk-espOS/espOS/releases/tag/$TAG)."
+            echo
+            echo "Read the espOS release notes for anything marked **BREAKING**: the build proves the firmware compiles, not that it behaves the same."
+            echo
+            if [ "$IDF_MOVED" = true ]; then
+              echo "### ESP-IDF moved: $OLD_IDF → $NEW_IDF"
+              echo
+              echo "\`.idf-version\` is bumped. These lines still name the old version and are left for you to update:"
+              echo
+              echo '```'
+              echo "${STALE:-(none found)}"
+              echo '```'
+              echo
+              echo "An IDF move can grow the bootloader, and the P4 bootloader has almost no room left below 0x6000. Check its size in the build log."
+              echo
+            fi
+            if [ -n "${DRIFT//[[:space:]]/}" ]; then
+              echo "### Lock changes outside espOS"
+              echo
+              echo "Re-resolving against the new espOS manifests also moved these. Review them before merging:"
+              echo
+              echo '```diff'
+              echo "$DRIFT"
+              echo '```'
+              echo
+            fi
+            echo "### Checks"
+            echo
+            echo "The firmware build for both panels is dispatched on this branch and shows up as checks here. Each run uploads \`merged-firmware-7b\` and \`merged-firmware-x7\` for test-flashing."
+            echo
+            echo "Opened by \`.github/workflows/track-espos.yml\` ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
+          } > "$BODY"
+
+          gh pr create --head "$BRANCH" --base main \
+            --title "fix: bump espOS to $TAG" --body-file "$BODY"
+          gh workflow run release-firmware.yml --ref "$BRANCH"
