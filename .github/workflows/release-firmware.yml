@@ -123,14 +123,20 @@ jobs:
       # key installs fine over USB and then rejects every future OTA, on the
       # device, long after CI went green.
       #
-      # Dispatched runs are included, and that is the point of this condition
-      # rather than `RELEASE_TAG != ''` alone. The artifact steps below already
-      # upload on a dispatch, because track-espos.yml dispatches this workflow on
-      # its bump branch and calls the images "the ones to test-flash" -- so those
-      # images reach a panel, and until they were signed here they reached it with
-      # a key that existed only inside that run. Flashing one stranded the panel:
-      # every later OTA was rejected with ESP_ERR_OTA_VALIDATE_FAILED, which is
-      # discoverable only on the boat. Found by doing exactly that, espOS v0.12.0.
+      # This condition tracks the artifact steps below: every event that uploads
+      # an image is an event whose image somebody flashes, and until a dispatch was
+      # signed here it reached a panel carrying a key that existed only inside that
+      # run. Flashing one stranded the panel -- every later OTA rejected with
+      # ESP_ERR_OTA_VALIDATE_FAILED, discoverable only on the boat. Found by doing
+      # exactly that, espOS v0.12.0.
+      #
+      # `pull_request` is deliberately NOT here, and neither is it on the artifact
+      # steps. A same-repository PR does receive secrets, and a PR can change the
+      # workflow that reads them, so extending this to PR builds would hand the
+      # signing key to anything anyone opens a PR with. That key cannot be rotated
+      # cheaply: every panel already flashed with it would stop accepting OTAs.
+      # PR checks prove the firmware builds; the dispatched run on the same branch
+      # is what produces an image to flash.
       - name: restore signing key
         id: signing
         if: env.RELEASE_TAG != '' || github.event_name == 'workflow_dispatch'
@@ -253,8 +259,9 @@ jobs:
           TAG: ${{ env.RELEASE_TAG }}
           BOARD: ${{ matrix.board }}
         run: |
-          # Manual runs are not releases: tag them with the commit so two
-          # dispatch builds are never indistinguishable on disk.
+          # A dispatch is not a release: tag it with the commit so two dispatched
+          # builds are never indistinguishable on disk. These are the images to
+          # test-flash -- the dispatched run is the one given the signing key.
           VERSION="${TAG:-$(cat version.txt)-g$(git rev-parse --short HEAD)}"
           case "$VERSION" in
             *[!A-Za-z0-9._-]*) echo "::error::refusing unsafe tag '$VERSION'"; exit 1 ;;
