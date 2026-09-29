@@ -14,17 +14,19 @@
 #
 # The PR is opened with a GitHub App's token (RELEASE_APP_ID and
 # RELEASE_APP_PRIVATE_KEY), because GitHub holds the checks of a PR opened with
-# the workflow token until a maintainer approves them, while an App's PR runs
-# them at once. Without those secrets -- a fork, say -- it falls back to the
-# workflow token, whose PR checks wait for that approval, so the firmware build
-# is dispatched on the branch instead and runs without waiting.
+# the workflow token until a maintainer approves them, while an App's PR runs them
+# at once. Without those secrets -- a fork, say -- it falls back to the workflow
+# token and those checks wait for the approval.
 #
-# Either way the images someone test-flashes come out of this, so
-# release-firmware.yml signs both event kinds with the real key: an image that
-# goes on a panel must carry the key that panel will need for its next OTA. A
-# throwaway key installs fine and then rejects every OTA afterwards, on the boat.
-# Do not narrow that signing condition -- it covers `pull_request` for the App
-# path and `workflow_dispatch` for the fallback, and each is a path to a panel.
+# Separately, and on both paths, the firmware build is dispatched on the tracking
+# branch. Two runs of the same build is not an oversight: the dispatched one is the
+# only one ELIGIBLE for the release signing key (release-firmware.yml -- whether it
+# actually gets one depends on COCKPIT_SIGNING_KEY_PEM being set), because a
+# `pull_request` build must never hold a key whose loss would stop every panel
+# already flashed with it from taking an OTA -- and a same-repository PR does get
+# secrets. So the PR's checks answer "does it build" and the dispatched run
+# produces the image to flash. Take artifacts from the dispatched run, and read its
+# signing warning if there is one.
 name: Track espOS releases
 
 # One run at a time: a scheduled and a manual run overlapping could both see no
@@ -44,13 +46,19 @@ on:
         description: "espOS tag to move to (default: the latest release)"
         required: false
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   track:
     runs-on: ubuntu-latest
+    # On the job rather than the workflow, so a second job added here starts with
+    # nothing and has to ask. All three together because a job-level block
+    # REPLACES the workflow-level one -- listing only `actions` here would quietly
+    # take away the write access this job needs to push the branch and open the PR.
+    permissions:
+      contents: write
+      pull-requests: write
+      # To dispatch release-firmware.yml: that run is the only one eligible for the
+      # signing key, so it is the only one whose artifact can go on a panel.
+      actions: write
     env:
       # A flag, because a step's `if` cannot read secrets. Only the flag: the
       # key itself in the job environment would reach every step.
@@ -254,7 +262,16 @@ jobs:
         if: steps.target.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          # The dispatch below needs `actions: write`, which the App token is not
+          # minted with -- it exists to author the PR. Named separately so the two
+          # uses cannot be confused: GH_TOKEN pushes and opens the PR, this one
+          # starts the build.
+          WORKFLOW_TOKEN: ${{ github.token }}
           AS_APP: ${{ steps.app-token.outputs.token != '' }}
+          # Whether the dispatched build can sign. A flag, not the key: what the
+          # body may promise depends on this, and promising a release-signed image
+          # that turns out to be throwaway-signed is how a panel gets stranded.
+          SIGNED: ${{ secrets.COCKPIT_SIGNING_KEY_PEM != '' }}
           TAG: ${{ steps.target.outputs.tag }}
           PINNED: ${{ steps.target.outputs.pinned }}
           IDF_MOVED: ${{ steps.bump.outputs.idf_moved }}
@@ -279,6 +296,23 @@ jobs:
           git push --quiet \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "$BRANCH"
+
+          # Before the PR, not after, and that order is the whole point. The target
+          # step sets skip=true once a PR exists for this tag, so every later run
+          # stops early -- which means a dispatch that failed after the PR was
+          # created would never be retried, and the bump would sit there with no
+          # image to flash and nothing to fix it but a manual dispatch. Failing here
+          # instead leaves no PR, so the next run does all of it again.
+          #
+          # Always, both paths: this run is the only one eligible for the signing
+          # key, because a `pull_request` build must never hold a key whose loss
+          # would stop every panel already flashed with it from taking an OTA, and a
+          # same-repository PR does get secrets. The PR's own checks answer "does it
+          # build"; this run produces the image that goes on a panel. So a bump
+          # builds twice where the App is configured -- CI minutes, not anything a
+          # boat notices.
+          GH_TOKEN="$WORKFLOW_TOKEN" \
+            gh workflow run release-firmware.yml --ref "$BRANCH"
 
           # Built as a file, never interpolated into a shell string: the drift
           # list and the stale lines are text from files in the tree.
@@ -313,10 +347,18 @@ jobs:
             echo "### Checks"
             echo
             if [ "$AS_APP" = true ]; then
-              echo "The firmware build for both panels runs as this PR's checks. Each board's run uploads \`merged-firmware-<board>\` for test-flashing."
+              echo "This PR's own checks build the firmware for both panels, which proves it compiles."
             else
-              echo "Opened with the workflow token, so GitHub holds this PR's checks until a maintainer approves them (**Approve workflows to run**). The firmware build for both panels then runs, and each board's run uploads \`merged-firmware-<board>\` for test-flashing."
+              echo "Opened with the workflow token, so GitHub holds this PR's own checks until a maintainer approves them (**Approve workflows to run**)."
             fi
+            echo
+            if [ "$SIGNED" = true ]; then
+              echo "Separately, the firmware build is dispatched on this branch, and **that** is the run to take images from: each board's dispatched run uploads \`merged-firmware-<board>\`, signed with the release key, so a panel you flash with one still accepts OTAs afterwards."
+            else
+              echo "Separately, the firmware build is dispatched on this branch, and that is the run that uploads \`merged-firmware-<board>\`. **\`COCKPIT_SIGNING_KEY_PEM\` is not set in this repository**, so those images carry a key generated inside the run and thrown away with it: one boots over USB and then rejects every OTA for the life of that panel. Check the dispatched run's signing warning before flashing anything."
+            fi
+            echo
+            echo "Images from a \`pull_request\` build are deliberately not published -- a PR build is never given the signing key."
             echo
             echo "Opened by \`.github/workflows/track-espos.yml\` ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
           } > "$BODY"

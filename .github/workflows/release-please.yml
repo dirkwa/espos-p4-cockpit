@@ -64,7 +64,15 @@ jobs:
 
   firmware:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    # always(), because the release is already out by the time anything below it
+    # can fail. The first release-please step creates it; the App token and the
+    # PR-opening step come after, and a failure in either -- an expired key, a
+    # misconfigured App, a bad minute at GitHub -- would fail the job and skip this
+    # one on a plain `needs:`. That leaves a tagged release carrying no firmware,
+    # which on this repository is a release carrying nothing at all: the binaries
+    # ARE the release. Whether to build is answered by release_created, not by
+    # whether opening a PR went well.
+    if: always() && needs.release-please.outputs.release_created == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/release-firmware.yml
