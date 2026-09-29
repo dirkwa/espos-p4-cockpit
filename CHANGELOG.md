@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.4.0...v1.4.1) (2026-09-29)
+
+
+### Fixed
+
+* bump espOS to v0.12.0 ([#148](https://github.com/dirkwa/espos-p4-cockpit/issues/148)) ([98f701f](https://github.com/dirkwa/espos-p4-cockpit/commit/98f701f765be1fdefdd8a07c4af445e43d1e3a4f))
+* bump espOS to v0.12.1 ([#151](https://github.com/dirkwa/espos-p4-cockpit/issues/151)) ([eefe9ca](https://github.com/dirkwa/espos-p4-cockpit/commit/eefe9ca6ff2d5819ce976239055256dace0449cd))
+* **ci:** keep the signing key out of PR builds, and dispatch the build that gets it ([#152](https://github.com/dirkwa/espos-p4-cockpit/issues/152)) ([06d4acb](https://github.com/dirkwa/espos-p4-cockpit/commit/06d4acb00189a53edefd096b6753ee96b255865b))
+* **ci:** sign dispatched builds, because those are the ones we flash ([#150](https://github.com/dirkwa/espos-p4-cockpit/issues/150)) ([337da99](https://github.com/dirkwa/espos-p4-cockpit/commit/337da998697b8492f6f2a83b8d7c49b86d31bd5f))
+
 ## [1.4.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.3.2...v1.4.0) (2026-09-27)
 
 
