@@ -195,6 +195,13 @@ jobs:
       # did the work by hand. The steps below carry the outcome into the PR
       # instead, so the human gate this workflow is built around -- the PR's own
       # firmware build -- actually gets to fire.
+      #
+      # `outcome` says THAT it failed, never why: a solver refusal, a registry
+      # that was unreachable and a container that would not pull all land here
+      # alike. So nothing downstream asserts a cause -- it reports the failure,
+      # points at this step's log, and gives the branch for each case. Claiming
+      # "needs changes in this project" on what was really a network flake would
+      # send someone editing pins to fix a retry.
       - name: Regenerate dependencies.lock
         id: lock
         continue-on-error: true
@@ -365,21 +372,24 @@ jobs:
             echo
             if [ "$LOCK" != success ]; then
               echo "> [!IMPORTANT]"
-              echo "> **This bump does not build as it stands, and is not mergeable as it stands.**"
+              echo "> **\`dependencies.lock\` was not regenerated, so this is not mergeable as it stands.**"
               echo ">"
-              echo "> \`idf.py reconfigure\` could not resolve dependencies against the new espOS"
-              echo "> manifests, so \`dependencies.lock\` is **unchanged** here and no firmware was"
-              echo "> dispatched. The usual reason is an espOS release that pins a shared registry"
-              echo "> component to a version this project pins differently in its own"
-              echo "> \`main/idf_component.yml\` -- the solver then refuses rather than picking one,"
-              echo "> which is the failure mode you want."
+              echo "> \`idf.py reconfigure\` failed. The lock here is **unchanged** from \`main\` and no"
+              echo "> firmware was dispatched. Read the **Regenerate dependencies.lock** step of the"
+              echo "> [run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) for the reason, because this workflow cannot tell"
+              echo "> the two apart:"
               echo ">"
-              echo "> The solver's message is in the **Regenerate dependencies.lock** step of the"
-              echo "> [run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), and this PR's own checks reproduce it."
+              echo "> - **\`Version solving failed\`** -- the espOS release pins a shared registry"
+              echo ">   component against this project's own pin in \`main/idf_component.yml\`. The"
+              echo ">   solver refusing rather than quietly picking one is the behaviour you want."
+              echo ">   Fix this project's side on this branch, re-run \`idf.py reconfigure\`, and"
+              echo ">   commit the lock with it."
+              echo "> - **anything else** (registry unreachable, container pull, runner) -- nothing is"
+              echo ">   wrong with the bump. Close this PR and let the next scheduled run re-open"
+              echo ">   it, or push an empty commit to re-run the checks."
               echo ">"
-              echo "> To finish it: fix this project's side on this branch, run"
-              echo "> \`idf.py reconfigure\` to regenerate the lock, commit both, then dispatch"
-              echo "> \`release-firmware.yml\` on \`$BRANCH\` to get an image to flash."
+              echo "> Either way, dispatch \`release-firmware.yml\` on \`$BRANCH\` once it builds:"
+              echo "> that run, not this PR's checks, produces the image to flash."
               echo
             fi
             echo "Read the espOS release notes for anything marked **BREAKING**: the build proves the firmware compiles, not that it behaves the same."
@@ -432,12 +442,13 @@ jobs:
 
           # Conventional-Commit type either way, so pr-title.yml passes; the
           # suffix exists so a bump needing hand-work cannot be skimmed as
-          # routine. No `!`: whether the eventual release is breaking is for
-          # whoever finishes the work to decide, not for this workflow.
+          # routine. It states the fact -- the lock was not regenerated -- and
+          # not a cause, which this workflow cannot know. No `!` either: whether
+          # the eventual release is breaking is for whoever finishes the work.
           if [ "$LOCK" = success ]; then
             TITLE="fix: bump espOS to $TAG"
           else
-            TITLE="fix: bump espOS to $TAG -- does not build, needs changes here"
+            TITLE="fix: bump espOS to $TAG -- dependencies.lock not regenerated"
           fi
           gh pr create --head "$BRANCH" --base main \
             --title "$TITLE" --body-file "$BODY"
