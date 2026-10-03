@@ -7,6 +7,16 @@
 # where it matters, after flashing that build's artifact to a panel. Merging
 # makes release-please propose the next cockpit release as usual.
 #
+# A bump is USUALLY mechanical, and sometimes is not: a breaking espOS release
+# can pin a shared registry component against this project's own pin, and then
+# the lock cannot be solved until this project changes too (#154 -- espOS
+# v0.14.0 and esp_hosted). That case still opens a PR, titled so it cannot be
+# skimmed as routine, with the lock left unchanged, no firmware dispatched, and
+# the reason at the top of the body. Opening it is the point: the PR is the
+# branch the work happens on, its own checks reproduce the failure, and because
+# the target step skips once a PR exists for the tag, the nightly schedule stops
+# re-reporting it.
+#
 # A submodule never moves on its own, and Dependabot's gitsubmodule ecosystem is
 # no substitute: it follows the tip of espOS main rather than release tags, and
 # never touches dependencies.lock, which carries a version for every espOS
@@ -175,7 +185,19 @@ jobs:
       # lock cannot be patched by hand. reconfigure rather than
       # update-dependencies: the latter would also take every newer registry
       # component the ranges allow, which is dependency-drift.yml's job.
+      #
+      # continue-on-error, because this failing is INFORMATION, not an accident.
+      # A breaking espOS release can make the bump un-solvable until this
+      # project changes with it -- espOS v0.14.0 pinned esp_hosted ==3.0.9 while
+      # main still pinned ==2.12.12, and the solver refused (#154). Letting that
+      # end the job meant no PR, no issue and no branch: the one thing the run
+      # learned stayed in a log, and the nightly schedule went red until someone
+      # did the work by hand. The steps below carry the outcome into the PR
+      # instead, so the human gate this workflow is built around -- the PR's own
+      # firmware build -- actually gets to fire.
       - name: Regenerate dependencies.lock
+        id: lock
+        continue-on-error: true
         if: steps.target.outputs.skip == 'false'
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1 branch head
         with:
@@ -189,7 +211,7 @@ jobs:
       # changes the binary beyond espOS, so the PR names it for the reviewer.
       - name: Name lock changes outside espOS
         id: drift
-        if: steps.target.outputs.skip == 'false'
+        if: steps.target.outputs.skip == 'false' && steps.lock.outcome == 'success'
         run: |
           set -euo pipefail
           git show HEAD:dependencies.lock > "$RUNNER_TEMP/lock.old"
@@ -279,6 +301,9 @@ jobs:
           NEW_IDF: ${{ steps.bump.outputs.new_idf }}
           STALE: ${{ steps.bump.outputs.stale }}
           DRIFT: ${{ steps.drift.outputs.changed }}
+          # 'success' or 'failure'. Decides whether this is a routine bump or a
+          # bump that needs code beside it.
+          LOCK: ${{ steps.lock.outcome }}
         run: |
           set -euo pipefail
           BRANCH="track-espos-$TAG"
@@ -289,10 +314,22 @@ jobs:
           git checkout -b "$BRANCH"
           # Named paths only: reconfigure leaves sdkconfig, build/ and a
           # throwaway signing key behind, all ignored, and none belong here.
-          git add espos dependencies.lock .idf-version
-          # fix: so release-please cuts a patch release once this merges.
+          if [ "$LOCK" = success ]; then
+            git add espos dependencies.lock .idf-version
+            LOCK_NOTE="and regenerates dependencies.lock"
+          else
+            # A failed solve may have left the lock half-written, and a stale or
+            # partial lock beside a moved submodule is a worse starting point
+            # than an honestly unchanged one. Restore it and say so.
+            git checkout --quiet -- dependencies.lock
+            git add espos .idf-version
+            LOCK_NOTE="WITHOUT regenerating dependencies.lock, which could not be solved"
+          fi
+          # fix: so release-please cuts a patch release once this merges. Left
+          # alone in the failed case too: whoever finishes the work decides what
+          # the release is, and their own commits carry it.
           git commit --quiet -m "fix: bump espOS to $TAG" \
-            -m "Moves the espos submodule from $OLD_DESC to $TAG and regenerates dependencies.lock."
+            -m "Moves the espos submodule from $OLD_DESC to $TAG $LOCK_NOTE."
           git push --quiet \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "$BRANCH"
@@ -311,8 +348,14 @@ jobs:
           # build"; this run produces the image that goes on a panel. So a bump
           # builds twice where the App is configured -- CI minutes, not anything a
           # boat notices.
-          GH_TOKEN="$WORKFLOW_TOKEN" \
-            gh workflow run release-firmware.yml --ref "$BRANCH"
+          # Skipped when the solve failed: that build cannot get past configure
+          # either, so dispatching it only spends CI minutes and adds a second
+          # red run to read. The body tells the reader to dispatch it once the
+          # branch builds.
+          if [ "$LOCK" = success ]; then
+            GH_TOKEN="$WORKFLOW_TOKEN" \
+              gh workflow run release-firmware.yml --ref "$BRANCH"
+          fi
 
           # Built as a file, never interpolated into a shell string: the drift
           # list and the stale lines are text from files in the tree.
@@ -320,6 +363,25 @@ jobs:
           {
             echo "Moves espOS from \`$OLD_DESC\` to [\`$TAG\`](https://github.com/signalk-espOS/espOS/releases/tag/$TAG)."
             echo
+            if [ "$LOCK" != success ]; then
+              echo "> [!IMPORTANT]"
+              echo "> **This bump does not build as it stands, and is not mergeable as it stands.**"
+              echo ">"
+              echo "> \`idf.py reconfigure\` could not resolve dependencies against the new espOS"
+              echo "> manifests, so \`dependencies.lock\` is **unchanged** here and no firmware was"
+              echo "> dispatched. The usual reason is an espOS release that pins a shared registry"
+              echo "> component to a version this project pins differently in its own"
+              echo "> \`main/idf_component.yml\` -- the solver then refuses rather than picking one,"
+              echo "> which is the failure mode you want."
+              echo ">"
+              echo "> The solver's message is in the **Regenerate dependencies.lock** step of the"
+              echo "> [run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), and this PR's own checks reproduce it."
+              echo ">"
+              echo "> To finish it: fix this project's side on this branch, run"
+              echo "> \`idf.py reconfigure\` to regenerate the lock, commit both, then dispatch"
+              echo "> \`release-firmware.yml\` on \`$BRANCH\` to get an image to flash."
+              echo
+            fi
             echo "Read the espOS release notes for anything marked **BREAKING**: the build proves the firmware compiles, not that it behaves the same."
             echo
             if [ "$IDF_MOVED" = true ]; then
@@ -352,7 +414,12 @@ jobs:
               echo "Opened with the workflow token, so GitHub holds this PR's own checks until a maintainer approves them (**Approve workflows to run**)."
             fi
             echo
-            if [ "$SIGNED" = true ]; then
+            # Nothing was dispatched when the solve failed, so do not promise a
+            # run that does not exist -- running this block both ways is what
+            # caught that.
+            if [ "$LOCK" != success ]; then
+              echo "No firmware was dispatched: the branch does not configure, so the build could not get past CMake. Dispatch \`release-firmware.yml\` on \`$BRANCH\` yourself once it builds -- that run, not this PR's checks, is the one that produces an image to flash."
+            elif [ "$SIGNED" = true ]; then
               echo "Separately, the firmware build is dispatched on this branch, and **that** is the run to take images from: each board's dispatched run uploads \`merged-firmware-<board>\`, signed with the release key, so a panel you flash with one still accepts OTAs afterwards."
             else
               echo "Separately, the firmware build is dispatched on this branch, and that is the run that uploads \`merged-firmware-<board>\`. **\`COCKPIT_SIGNING_KEY_PEM\` is not set in this repository**, so those images carry a key generated inside the run and thrown away with it: one boots over USB and then rejects every OTA for the life of that panel. Check the dispatched run's signing warning before flashing anything."
@@ -363,5 +430,14 @@ jobs:
             echo "Opened by \`.github/workflows/track-espos.yml\` ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
           } > "$BODY"
 
+          # Conventional-Commit type either way, so pr-title.yml passes; the
+          # suffix exists so a bump needing hand-work cannot be skimmed as
+          # routine. No `!`: whether the eventual release is breaking is for
+          # whoever finishes the work to decide, not for this workflow.
+          if [ "$LOCK" = success ]; then
+            TITLE="fix: bump espOS to $TAG"
+          else
+            TITLE="fix: bump espOS to $TAG -- does not build, needs changes here"
+          fi
           gh pr create --head "$BRANCH" --base main \
-            --title "fix: bump espOS to $TAG" --body-file "$BODY"
+            --title "$TITLE" --body-file "$BODY"
