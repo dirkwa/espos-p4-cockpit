@@ -1,7 +1,7 @@
 dependencies:
   idf: ">=6.0.0"
   espressif/esp_hosted:
-    version: "==2.12.12"
+    version: "==3.0.9"
     rules:
       - if: "target == esp32p4"
   espressif/esp_wifi_remote:
