@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.4.1...v1.5.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* espOS v0.14.0, which moves the hosted transport to esp_hosted 3.x ([#153](https://github.com/dirkwa/espos-p4-cockpit/issues/153))
+
+### Fixed
+
+* **ci:** a breaking espOS release should open the tracking PR, not just fail ([#156](https://github.com/dirkwa/espos-p4-cockpit/issues/156)) ([43f788d](https://github.com/dirkwa/espos-p4-cockpit/commit/43f788d3f2cd4e03d1a0d97247e982a4ed7bb38d))
+
+
+### Internal
+
+* espOS v0.14.0, which moves the hosted transport to esp_hosted 3.x ([#153](https://github.com/dirkwa/espos-p4-cockpit/issues/153)) ([11b9fb5](https://github.com/dirkwa/espos-p4-cockpit/commit/11b9fb544a284b45a82b46149ff70440500ff788))
+* release 1.5.0 rather than 2.0.0 for the espOS 3.x bump ([#157](https://github.com/dirkwa/espos-p4-cockpit/issues/157)) ([c284f9a](https://github.com/dirkwa/espos-p4-cockpit/commit/c284f9ab12506b0276bdfa2c14e153b804b20e94))
+
 ## [1.4.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.4.0...v1.4.1) (2026-09-29)
 
 
