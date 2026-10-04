@@ -187,7 +187,7 @@ dependencies:
       type: service
     version: 1.8.0
   espressif/esp_wifi_remote:
-    component_hash: 50d3beaf95c0bc47d0fcf56752beaf3cbaae981fd8c3b74d6890b45d8be689fe
+    component_hash: faa185898a843b9d7d0456e4094a3b5f1491a48ddd57ce0e5179e13ac6243f2c
     dependencies:
     - name: espressif/esp_hosted
       registry_url: https://components.espressif.com
@@ -205,7 +205,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.6.4
+    version: 1.6.5
   espressif/i2c_bus:
     component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
     dependencies:
@@ -559,6 +559,6 @@ direct_dependencies:
 - signalk-espos/espos_time
 - signalk-espos/espos_wifi
 - waveshare/esp_lcd_ili9881c
-manifest_hash: 1ffc40a4ff2fb71bc2bbf241186edb02390c696aed1125fe571406afadd96cba
+manifest_hash: 162e7d82bff1ace2838bcd7caa14688b7945d366ca2602732140565843397c92
 target: esp32p4
 version: 3.0.0
