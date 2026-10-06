@@ -288,7 +288,7 @@ dependencies:
     source:
       path: espos/components/espos_audio
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_config:
     dependencies:
     - name: idf
@@ -297,11 +297,11 @@ dependencies:
       version: ==1.7.19~2
     - name: signalk-espos/espos_health
       override_path: ../espos_health
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_config
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_event:
     dependencies:
     - name: idf
@@ -309,18 +309,18 @@ dependencies:
     source:
       path: espos/components/espos_event
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_flow:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_formulas
       override_path: ../espos_formulas
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_flow
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_formulas:
     dependencies:
     - name: idf
@@ -328,7 +328,7 @@ dependencies:
     source:
       path: espos/components/espos_formulas
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_health:
     dependencies:
     - name: idf
@@ -336,17 +336,17 @@ dependencies:
     source:
       path: espos/components/espos_health
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_httpd:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_config
       override_path: ../espos_config
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_log
       override_path: ../espos_log
-      version: ^0.15.0
+      version: ^0.16.0
     - name: espressif/cjson
       version: ==1.7.19~2
     - name: joltwallet/littlefs
@@ -355,14 +355,14 @@ dependencies:
       version: ==1.22.3
     - name: signalk-espos/espos_event
       override_path: ../espos_event
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_health
       override_path: ../espos_health
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_httpd
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_log:
     dependencies:
     - name: idf
@@ -370,20 +370,20 @@ dependencies:
     source:
       path: espos/components/espos_log
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_net:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_config
       override_path: ../espos_config
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_httpd
       override_path: ../espos_httpd
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_event
       override_path: ../espos_event
-      version: ^0.15.0
+      version: ^0.16.0
     - name: espressif/cjson
       version: ==1.7.19~2
     - name: espressif/mdns
@@ -393,96 +393,96 @@ dependencies:
     source:
       path: espos/components/espos_net
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_sensors:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_flow
       override_path: ../espos_flow
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_sensors
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_sk:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_config
       override_path: ../espos_config
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_httpd
       override_path: ../espos_httpd
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_net
       override_path: ../espos_net
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_health
       override_path: ../espos_health
-      version: ^0.15.0
+      version: ^0.16.0
     - name: espressif/cjson
       version: ==1.7.19~2
     - name: signalk-espos/espos_time
       override_path: ../espos_time
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_event
       override_path: ../espos_event
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_sk
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_sk_flow:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_flow
       override_path: ../espos_flow
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_health
       override_path: ../espos_health
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_net
       override_path: ../espos_net
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_sk
       override_path: ../espos_sk
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_sk_flow
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_time:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_config
       override_path: ../espos_config
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_httpd
       override_path: ../espos_httpd
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_event
       override_path: ../espos_event
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_time
       type: local
-    version: 0.15.0
+    version: 0.16.0
   signalk-espos/espos_wifi:
     dependencies:
     - name: idf
       version: '>=6.0.0,<6.1.0'
     - name: signalk-espos/espos_config
       override_path: ../espos_config
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_httpd
       override_path: ../espos_httpd
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_net
       override_path: ../espos_net
-      version: ^0.15.0
+      version: ^0.16.0
     - name: espressif/cjson
       version: ==1.7.19~2
     - name: espressif/esp_hosted
@@ -495,14 +495,14 @@ dependencies:
       version: ==1.6.5
     - name: signalk-espos/espos_health
       override_path: ../espos_health
-      version: ^0.15.0
+      version: ^0.16.0
     - name: signalk-espos/espos_event
       override_path: ../espos_event
-      version: ^0.15.0
+      version: ^0.16.0
     source:
       path: espos/components/espos_wifi
       type: local
-    version: 0.15.0
+    version: 0.16.0
   waveshare/esp_lcd_ili9881c:
     component_hash: 3150ce0151872e7d2b2ad03a3ce4f3a95b3598d7786d13c6a478c6835a9b423d
     dependencies:
@@ -551,6 +551,6 @@ direct_dependencies:
 - signalk-espos/espos_time
 - signalk-espos/espos_wifi
 - waveshare/esp_lcd_ili9881c
-manifest_hash: ae34933821834f9df2cd826b069b4e92e0ac96b225a71f32db5c81ca5b5c8065
+manifest_hash: 0f59c86209b2c68fff411ad620e7ffe9c1487458cf403d5f1370225ca7fc5cbf
 target: esp32p4
 version: 3.0.0
