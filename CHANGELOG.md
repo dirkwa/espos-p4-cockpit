@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.1...v1.5.2) (2026-10-10)
+
+
+### Fixed
+
+* bump espOS to v0.16.1 ([#163](https://github.com/dirkwa/espos-p4-cockpit/issues/163)) ([edee521](https://github.com/dirkwa/espos-p4-cockpit/commit/edee52114668b5df8aa62a06d494c8dcee6c005f))
+
 ## [1.5.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.0...v1.5.1) (2026-10-10)
 
 
