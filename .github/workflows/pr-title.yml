@@ -3,8 +3,9 @@
 # change that never appears in the notes. Same check as espOS.
 #
 # pull_request, not pull_request_target: the check only reads the title, which
-# the read-only token a fork's pull request gets is enough for, and GitHub
-# blocks pull_request_target on public repositories by default.
+# the read-only token a fork's pull request gets is enough for, and from
+# 2026-11-02 GitHub blocks pull_request_target on public repositories by
+# default.
 name: PR title
 
 on:
