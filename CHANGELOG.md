@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.0...v1.5.1) (2026-10-10)
+
+
+### Fixed
+
+* bump espOS to v0.15.0 -- dependencies.lock not regenerated ([#159](https://github.com/dirkwa/espos-p4-cockpit/issues/159)) ([0efb433](https://github.com/dirkwa/espos-p4-cockpit/commit/0efb43304c8cb1c268cf41467627169937ba021d))
+* bump espOS to v0.16.0 ([#161](https://github.com/dirkwa/espos-p4-cockpit/issues/161)) ([ee5a174](https://github.com/dirkwa/espos-p4-cockpit/commit/ee5a1749ca517e46966abdb5276d688e4e970718))
+
 ## [1.5.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.4.1...v1.5.0) (2026-10-03)
 
 
