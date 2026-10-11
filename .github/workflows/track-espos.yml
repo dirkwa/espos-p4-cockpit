@@ -109,6 +109,7 @@ jobs:
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "explicit=$EXPLICIT" >> "$GITHUB_OUTPUT"
 
           git -C espos fetch --quiet --tags origin
           PINNED=$(git rev-parse HEAD:espos)
@@ -468,8 +469,15 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           TAG: ${{ steps.target.outputs.tag }}
+          EXPLICIT: ${{ steps.target.outputs.explicit }}
         run: |
           set -euo pipefail
+          # A tag named by hand may be a deliberate rollback or a side test,
+          # not the newest release, so it supersedes nothing.
+          if [ "$EXPLICIT" = yes ]; then
+            echo "$TAG was named by hand; superseding nothing."
+            exit 0
+          fi
           # sort -V ranks v1.2.0-rc1 above v1.2.0, so a prerelease named by
           # hand would "supersede" the real release. It closes nothing.
           case "$TAG" in *-*) echo "$TAG is a prerelease; superseding nothing."; exit 0 ;; esac
