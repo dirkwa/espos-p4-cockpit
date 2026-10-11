@@ -5,12 +5,10 @@
 namespace jlp {
 
 /** Day / night classifier driven by SignalK `environment.mode`
- *  ("day" / "night"), as published by signalk-derived-data's suncalc.
+ *  ("day" / "night"), as published by signalk-espos-manager from the
+ *  Sun's altitude (@openwaters/almanac): day from sunrise to sunset.
+ *  signalk-derived-data publishes the same path and is accepted too.
  *  Used by the idle dimmer so the panel only goes dark at night.
- *
- *  derived-data already applies civil-twilight phases (it reports
- *  `mode: "night"` only once it's past dusk, and back to "day" at
- *  dawn), so the firmware no longer computes its own twilight buffer.
  *
  *  Fail-safe behaviour: until SK has delivered a value, classify as
  *  Day so the helm stays bright. Dimming while the operator needs the

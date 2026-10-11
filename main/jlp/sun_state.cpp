@@ -19,10 +19,9 @@ void SunState::set_mode(const char* mode) {
   } else if (strcasecmp(mode, "night") == 0) {
     next = DayNight::Night;
   } else {
-    // derived-data only ever publishes "day" or "night" on
-    // environment.mode (the richer phase string lives on
-    // environment.sun); ignore anything unexpected rather than
-    // guessing.
+    // environment.mode is only ever "day" or "night" (derived-data's
+    // richer phase string lives on environment.sun); ignore anything
+    // unexpected rather than guessing.
     ESP_LOGW(TAG, "unexpected environment.mode: %s", mode);
     return;
   }
