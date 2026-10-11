@@ -459,3 +459,54 @@ jobs:
           fi
           gh pr create --head "$BRANCH" --base main \
             --title "$TITLE" --body-file "$BODY"
+
+      # The way Dependabot retires its own PRs: once a newer bump is open, an
+      # older one still open is noise, and merging it would only be undone by
+      # the next. Closed rather than left for a human to notice.
+      - name: Close the bumps this one supersedes
+        if: steps.target.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # sort -V ranks v1.2.0-rc1 above v1.2.0, so a prerelease named by
+          # hand would "supersede" the real release. It closes nothing.
+          case "$TAG" in *-*) echo "$TAG is a prerelease; superseding nothing."; exit 0 ;; esac
+          NEW=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "track-espos-$TAG" \
+                  --state open --json number,isCrossRepository \
+                  --jq 'map(select(.isCrossRepository == false)) | .[0].number // empty')
+          if [ -z "$NEW" ]; then
+            echo "No open PR for $TAG; nothing to supersede."
+            exit 0
+          fi
+          BOT="41898282+github-actions[bot]@users.noreply.github.com"
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 \
+              --json number,headRefName,isCrossRepository \
+              --jq '.[] | select(.isCrossRepository == false)
+                        | select(.headRefName | startswith("track-espos-v"))
+                        | "\(.number) \(.headRefName)"' |
+          while read -r NUM REF; do
+            OLD="${REF#track-espos-}"
+            [ "$OLD" = "$TAG" ] && continue
+            # Older releases only: a tag named by hand to roll back must not
+            # close the bump to a newer one.
+            [ "$(printf '%s\n%s\n' "$OLD" "$TAG" | sort -V | tail -n1)" = "$TAG" ] || continue
+            # One PR that cannot be closed (closed meanwhile, say) must not
+            # stop the rest, nor turn a run that opened its PR red.
+            if ! gh pr close "$NUM" --repo "$GITHUB_REPOSITORY" \
+                   --comment "Superseded by #$NEW, which moves espOS to $TAG."; then
+              echo "::warning::Could not close #$NUM."
+              continue
+            fi
+            # The branch goes too, unless someone pushed work onto it: a bump
+            # that needed hand-work may hold commits worth keeping.
+            AUTHORS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUM/commits" \
+                        --jq '.[].commit.author.email' | sort -u) || AUTHORS=unknown
+            if [ "$AUTHORS" = "$BOT" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$REF" \
+                || echo "::warning::Could not delete $REF."
+            else
+              echo "Kept $REF: it carries commits beyond the bump."
+            fi
+          done
