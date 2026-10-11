@@ -500,9 +500,11 @@ jobs:
               continue
             fi
             # The branch goes too, unless someone pushed work onto it: a bump
-            # that needed hand-work may hold commits worth keeping.
+            # that needed hand-work may hold commits worth keeping. Committer as
+            # well as author, because an amend or rebase keeps the bot as author.
             AUTHORS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUM/commits" \
-                        --jq '.[].commit.author.email' | sort -u) || AUTHORS=unknown
+                        --jq '.[] | .commit.author.email, .commit.committer.email' \
+                        | sort -u) || AUTHORS=unknown
             if [ "$AUTHORS" = "$BOT" ]; then
               gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$REF" \
                 || echo "::warning::Could not delete $REF."
