@@ -796,3 +796,48 @@ jobs:
                  "leaving it as it is rather than discarding a later" \
                  "release's images"
           fi
+
+  # The registry indexes new releases on a schedule, and GitHub runs scheduled
+  # workflows late or drops them under load, so a release could sit unseen for
+  # hours with the Signal K manager telling boats they were up to date. Asking
+  # the registry to reindex once the assets are attached shows it in minutes.
+  # Its schedule remains the fallback, so this job only ever warns: the release
+  # itself is already complete when it runs.
+  notify-registry:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      # A flag, because a step's `if` cannot read secrets.
+      APP_CONFIGURED: >-
+        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+    steps:
+      # The same App that opens the release and espOS tracking PRs, with a
+      # token for the registry alone. It needs access to
+      # signalk-espOS/registry, granted in the App's installation on that
+      # organisation.
+      - name: Get a token for the registry
+        id: token
+        if: env.APP_CONFIGURED == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: signalk-espOS
+          repositories: registry
+          permission-contents: write
+
+      - name: Ask the registry to reindex
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::no token for signalk-espOS/registry; its hourly" \
+                 "reindex will pick this release up instead"
+            exit 0
+          fi
+          gh api -X POST repos/signalk-espOS/registry/dispatches \
+            -f event_type=firmware-released \
+            || echo "::warning::the registry refused the reindex request; its" \
+                    "hourly reindex will pick this release up instead"
