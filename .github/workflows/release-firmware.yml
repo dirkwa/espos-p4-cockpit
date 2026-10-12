@@ -810,7 +810,7 @@ jobs:
     env:
       # A flag, because a step's `if` cannot read secrets.
       APP_CONFIGURED: >-
-        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       # The same App that opens the release and espOS tracking PRs, with a
       # token for the registry alone. It needs access to
@@ -822,7 +822,9 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          # The Client ID is public (the App's settings page shows it), so it
+          # lives here; only the private key is a secret.
+          client-id: Iv23liXbDO1OUUwlQoNc
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: signalk-espOS
           repositories: registry

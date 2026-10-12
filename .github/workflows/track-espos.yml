@@ -22,10 +22,10 @@
 # never touches dependencies.lock, which carries a version for every espOS
 # component and moves on every bump.
 #
-# The PR is opened with a GitHub App's token (RELEASE_APP_ID and
-# RELEASE_APP_PRIVATE_KEY), because GitHub holds the checks of a PR opened with
+# The PR is opened with a GitHub App's token (RELEASE_APP_PRIVATE_KEY, with the
+# App's Client ID inline), because GitHub holds the checks of a PR opened with
 # the workflow token until a maintainer approves them, while an App's PR runs them
-# at once. Without those secrets -- a fork, say -- it falls back to the workflow
+# at once. Without that secret -- a fork, say -- it falls back to the workflow
 # token and those checks wait for the approval.
 #
 # Separately, and on both paths, the firmware build is dispatched on the tracking
@@ -73,7 +73,7 @@ jobs:
       # A flag, because a step's `if` cannot read secrets. Only the flag: the
       # key itself in the job environment would reach every step.
       APP_CONFIGURED: >-
-        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       # fetch-depth: 0 so the submodule has its history: whether the release is
       # newer than the pin is answered by ancestry, which needs both commits.
@@ -283,7 +283,9 @@ jobs:
         if: steps.target.outputs.skip == 'false' && env.APP_CONFIGURED == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          # The Client ID is public (the App's settings page shows it), so it
+          # lives here; only the private key is a secret.
+          client-id: Iv23liXbDO1OUUwlQoNc
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
