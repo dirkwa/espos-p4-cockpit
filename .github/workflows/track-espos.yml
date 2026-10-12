@@ -70,6 +70,9 @@ jobs:
       # signing key, so it is the only one whose artifact can go on a panel.
       actions: write
     env:
+      # A flag, because a step's `if` cannot read secrets. The Docker ID may be
+      # kept as a secret or a variable; either one turns the login on.
+      DOCKERHUB_LOGIN: ${{ (secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME) != '' }}
       # A flag, because a step's `if` cannot read secrets. Only the flag: the
       # key itself in the job environment would reach every step.
       APP_CONFIGURED: >-
@@ -183,11 +186,11 @@ jobs:
 
       # See release-firmware.yml.
       - name: log in to Docker Hub
-        if: vars.DOCKERHUB_USERNAME != '' && steps.target.outputs.skip == 'false'
+        if: env.DOCKERHUB_LOGIN == 'true' && steps.target.outputs.skip == 'false'
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Re-resolves the lock against the new espOS manifests. Every espOS
