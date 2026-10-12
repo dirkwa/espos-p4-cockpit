@@ -9,13 +9,14 @@
 # than left to release-firmware.yml's `release:` trigger.
 #
 # The release PR, though, is opened with a GitHub App's token
-# (RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY): GitHub holds the checks of
-# a PR opened with the workflow token until a maintainer approves them,
-# while an App's PR runs them at once. So release-please runs twice, the
-# release with the workflow token and the PR with the App's. A release
-# published by the App would also fire the `release:` trigger and build
-# the firmware a second time. Without the secrets the PR falls back to
-# the workflow token, and its checks wait for approval.
+# (RELEASE_APP_PRIVATE_KEY, with the App's Client ID inline): GitHub
+# holds the checks of a PR opened with the workflow token until a
+# maintainer approves them, while an App's PR runs them at once. So
+# release-please runs twice, the release with the workflow token and the
+# PR with the App's. A release published by the App would also fire the
+# `release:` trigger and build the firmware a second time. Without that
+# secret the PR falls back to the workflow token, and its checks wait
+# for approval.
 name: release-please
 
 on:
@@ -33,7 +34,7 @@ jobs:
       # A flag, because a step's `if` cannot read secrets. Only the flag: the
       # key itself in the job environment would reach every step.
       APP_CONFIGURED: >-
-        ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
@@ -50,7 +51,9 @@ jobs:
         if: env.APP_CONFIGURED == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          # The Client ID is public (the App's settings page shows it), so it
+          # lives here; only the private key is a secret.
+          client-id: Iv23liXbDO1OUUwlQoNc
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
