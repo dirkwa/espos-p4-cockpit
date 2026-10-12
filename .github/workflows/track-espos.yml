@@ -74,6 +74,9 @@ jobs:
       # key itself in the job environment would reach every step.
       APP_CONFIGURED: >-
         ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+      # A step's if: cannot read secrets, so the job exposes whether the Docker
+      # Hub pair is set; forks and runs without it pull anonymously.
+      DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       # fetch-depth: 0 so the submodule has its history: whether the release is
       # newer than the pin is answered by ancestry, which needs both commits.
@@ -183,11 +186,11 @@ jobs:
 
       # See release-firmware.yml.
       - name: log in to Docker Hub
-        if: vars.DOCKERHUB_USERNAME != '' && steps.target.outputs.skip == 'false'
+        if: env.DOCKERHUB_LOGIN == 'true' && steps.target.outputs.skip == 'false'
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Re-resolves the lock against the new espOS manifests. Every espOS

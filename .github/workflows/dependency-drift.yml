@@ -31,6 +31,10 @@ permissions:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    env:
+      # A step's if: cannot read secrets, so the job exposes whether the Docker
+      # Hub pair is set; forks and runs without it pull anonymously.
+      DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       # fetch-depth: 0 so `git describe` works in this repository and in the
       # espOS submodule -- see release-firmware.yml for why the default of 1
@@ -47,11 +51,11 @@ jobs:
 
       # See release-firmware.yml.
       - name: log in to Docker Hub
-        if: vars.DOCKERHUB_USERNAME != ''
+        if: env.DOCKERHUB_LOGIN == 'true'
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: re-resolve dependencies
