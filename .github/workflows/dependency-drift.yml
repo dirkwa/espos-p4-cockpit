@@ -31,6 +31,10 @@ permissions:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    # A step's if: cannot read secrets, so the job exposes whether the Docker
+    # Hub pair is set; forks and runs without it pull anonymously.
+    env:
+      DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       # fetch-depth: 0 so `git describe` works in this repository and in the
       # espOS submodule -- see release-firmware.yml for why the default of 1
@@ -44,6 +48,16 @@ jobs:
       - name: read pinned IDF version
         id: idf
         run: echo "version=$(cat .idf-version)" >> "$GITHUB_OUTPUT"
+
+      # Logged in, Docker Hub rate-limits per account instead of per runner IP.
+      # Best effort: a failed login falls back to an anonymous pull.
+      - name: log in to Docker Hub
+        if: env.DOCKERHUB_LOGIN == 'true'
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: re-resolve dependencies
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
