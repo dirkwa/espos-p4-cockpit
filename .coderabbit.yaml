@@ -6,12 +6,12 @@ reviews:
     enabled: true
     auto_incremental_review: true
     drafts: false
-    # Mechanical PRs that don't benefit from review. `chore(release):`
+    # Mechanical PRs that don't benefit from review. `chore: release`
     # PRs are version-bump-only — the substantive change was already
     # reviewed on its own PR. Dep bumps come from automation that has
     # its own contract with the registry.
     ignore_title_keywords:
-      - "chore(release):"
+      - "chore: release"
       - "chore(deps):"
       - "chore(deps-dev):"
       - "[skip review]"
@@ -117,7 +117,7 @@ reviews:
           entry.
         - No `Co-Authored-By` lines, no AI-tool attribution anywhere.
         - **No version bumps in feature/fix PRs.** Versions live in
-          their own `chore(release): X.Y.Z` PR. Flag a version string
+          release-please's own `chore: release X.Y.Z` PR. Flag a version string
           that sneaks into a feat/fix PR.
         - One logical change per PR.
 
