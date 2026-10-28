@@ -1,5 +1,3 @@
-# PlatformIO build output
-.pio/
 # dependencies.lock is COMMITTED, not ignored: this is an application, and an
 # application pins its registry dependencies exactly through its lock so CI
 # builds the same binary a developer just flashed. Without it the component
@@ -7,14 +5,6 @@
 # set than the one that was tested. espOS states the same rule for the same
 # reason (espos/.gitignore); libraries use version ranges instead.
 # Update deliberately with `idf.py update-dependencies` and commit the diff.
-
-# `pio run` regenerates these per env from sdkconfig.defaults; only the
-# checked-in sdkconfig.<env> files are the source of truth.
-sdkconfig.*.old
-
-# Local build overrides: WiFi credentials, SK host, personal wake word.
-# Boat config lives here and never in the repo — see platformio_local.ini.example.
-platformio_local.ini
 
 # Agent / tooling scratch
 .claude/
@@ -44,3 +34,6 @@ secure_boot_signing_key.pem
 *.nvs.bin
 provisioning/
 secrets/
+
+# Python bytecode from running scripts/*.py
+__pycache__/

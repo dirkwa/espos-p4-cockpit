@@ -24,16 +24,11 @@ reviews:
   # managed_components/ is the ESP-IDF component manager's checkout —
   # 4300+ vendored files including prebuilt .a archives. It is never
   # authored here and the manager rewrites it on any build, so reviewing
-  # it is pure noise. sdkconfig.* are generated per env from
-  # sdkconfig.defaults; only that file is hand-edited.
+  # it is pure noise.
   path_filters:
     - "!managed_components/**"
-    - "!.pio/**"
     - "!**/*.a"
     - "!**/*.bin"
-    - "!sdkconfig.p4_cockpit"
-    - "!sdkconfig.p4_cockpit_4b"
-    - "!sdkconfig.p4_cockpit_netwake"
 
   high_level_summary_instructions: |
     Write summaries in present tense. Describe what the code does, not
@@ -52,7 +47,7 @@ reviews:
         Layout Player: a runtime-loadable LVGL widget engine driven by
         JSON pushed over HTTP, plus a SignalK <-> NMEA 2000 gateway and
         a Wyoming voice satellite. There are no host tests — the build
-        gate is `pio run` and verification happens on real hardware, so
+        gate is `scripts/build.sh` with zero warnings and verification happens on real hardware, so
         weigh claims of "tested" against whether the PR shows device
         output.
 
@@ -61,10 +56,11 @@ reviews:
         - **Never blank the helm.** Layout parse and LVGL build happen
           under a hidden staging parent; only a complete tree is swapped
           in. A failed push must leave the previous layout rendering.
-        - **LVGL is single-writer** on the `event_loop` task. The HTTP
-          task parses and validates, then marshals build/swap via
-          `event_loop()->onDelay(0, ...)`. Flag any `lv_*` call reached
-          from the httpd, OTA, remote-log or audio tasks.
+        - **LVGL is single-writer** on the UI task
+          (`cockpit_hal::ui`). The HTTP task parses and validates, then
+          marshals build/swap via `ui::post(...)`; espOS SignalK
+          callbacks and `ESPOS_EVENT` handlers `ui::post` their work
+          too. Flag any `lv_*` call reached from another task.
         - **Wire format is additive.** New optional fields are fine;
           removing, renaming or changing the semantics of a field bumps
           `schema` 1 -> 2. Flag silent semantic changes to existing
@@ -74,7 +70,7 @@ reviews:
 
         ## Cross-task state
 
-        Anything written on `event_loop` (widget callbacks) and read on
+        Anything written on the UI task (widget callbacks) and read on
         the httpd task (`/hello`, `/mic_probe`) must be `std::atomic` —
         see `VoiceControl`. Flag plain scalars that gain a reader on
         another task; that is a real race, not a theoretical one.
@@ -93,12 +89,12 @@ reviews:
         ## Boat configuration must never be committed
 
         No WiFi SSIDs or passwords, no server IPs, no personal wake
-        words — not in source, `platformio.ini`, or sdkconfig. `strings`
-        on a firmware image prints every one of them and the merged
-        binary is a public release asset. Site-specific values are
-        build-time `-D` defines with empty defaults; local overrides
-        live in the gitignored `platformio_local.ini`. Flag any literal
-        that looks like a credential or a LAN address.
+        words — not in source, `sdkconfig.defaults`, or Kconfig defaults.
+        `strings` on a firmware image prints every one of them and the
+        merged binary is a public release asset. Site config lives in
+        NVS (the espOS provisioning image or the setup portal); bench
+        overrides go in the gitignored `sdkconfig.local`. Flag any
+        literal that looks like a credential or a LAN address.
 
         ## Comments
 

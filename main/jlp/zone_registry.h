@@ -28,13 +28,12 @@ struct Zone {
 };
 
 // Per-path zone list, populated from meta deltas pushed in-stream by
-// signalk-server when the WS subscription includes sendMeta=all
-// (default in SensESP since PR #965). No HTTP polling — zones arrive
-// alongside value deltas and update automatically if SK's metadata
-// changes. Meta is delivered per-path: SubjectRegistry creates one
-// SKMetadataListener per bound path whose event_loop-side consumer
-// calls apply_meta directly (the REST fetch in zone_fetch.cpp is a
-// cold-start fallback that also calls apply_meta).
+// signalk-server (espOS opens the stream with sendMeta=all). No HTTP
+// polling — zones arrive alongside value deltas and update
+// automatically if SK's metadata changes. Meta is delivered per-path:
+// SubjectRegistry's espos_sk_subscribe callback for each bound path
+// posts it to the UI task, which calls apply_meta (the REST fetch in
+// zone_fetch.cpp is a cold-start fallback that also calls apply_meta).
 class ZoneRegistry {
  public:
   // Boot-time no-op kept for the call site. Zone metadata is wired
@@ -55,10 +54,10 @@ class ZoneRegistry {
   // operator-facing identifier of the relay.
   const std::string& description(const std::string& path) const;
 
-  // Feed a meta object for `path`. Called on the event_loop task by the
-  // per-path SKMetadataListener consumer (SubjectRegistry) and by the
-  // REST cold-start fallback (zone_fetch.cpp); also usable from a test.
-  // Calls lv_subject_notify, so it MUST run on event_loop.
+  // Feed a meta object for `path`. Called on the UI task by the
+  // per-path subscription (SubjectRegistry) and by the REST cold-start
+  // fallback (zone_fetch.cpp); also usable from a test.
+  // Calls lv_subject_notify, so it MUST run on the UI task.
   void apply_meta(const std::string& path, const JsonObjectConst& meta);
 
  private:

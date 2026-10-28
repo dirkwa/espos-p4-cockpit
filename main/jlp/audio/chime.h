@@ -15,7 +15,7 @@ namespace jlp {
 ///
 /// Process-lifetime singleton (like the alert overlay). init() is
 /// called once at boot with the board's AudioDriver; play() is safe to
-/// call from the LVGL event_loop task because the driver's play_pcm()
+/// call from the UI task because the driver's play_pcm()
 /// is non-blocking.
 class Chime {
  public:
@@ -41,7 +41,7 @@ class Chime {
   /// Panel-local standing mute. While muted, play() no-ops — the alert
   /// overlay still shows alarms, but this panel stays silent (current
   /// AND future) until un-muted. Local to this panel; doesn't touch SK.
-  /// Atomic: written on event_loop (the toggle) but also read on the
+  /// Atomic: written on the UI task (the toggle) but also read on the
   /// httpd task via /beep -> test() -> play().
   // Persisted: a helm silenced before a reboot must not start beeping
   // again on its own.

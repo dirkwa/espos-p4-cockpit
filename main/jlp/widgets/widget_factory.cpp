@@ -2346,7 +2346,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       root, nullptr);
 
   // apparentBearing (rad). The plugin sends null when there's no heading
-  // to reference it against; SensESP's value listener drops nulls, so the
+  // to reference it against; SubjectRegistry ignores nulls, so the
   // subject simply retains its last value. KNOWN LIMITATION: if a heading
   // source drops mid-watch, the needle keeps pointing at the last good
   // bearing rather than hiding — distinguishing that would need a
@@ -2792,7 +2792,7 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_add_event_cb(root, release_cb, LV_EVENT_RELEASED, nullptr);
   lv_obj_add_event_cb(root, release_cb, LV_EVENT_PRESS_LOST, nullptr);
 
-  // Poll the satellite state ~4 Hz on the event_loop (LVGL) task and update
+  // Poll the satellite state ~4 Hz on the UI task and update
   // the caption/colour: LISTENING (green) while streaming mic, "…" when the
   // orchestrator is disconnected, else the caption.
   vc->timer = lv_timer_create(

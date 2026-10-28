@@ -65,14 +65,14 @@ class VoiceControl {
   // Stored as "is muted" while the `mic` widget reads ON = live, for the
   // same reason set_speaker_muted above is: unmuted is the power-on default.
   void set_mic_muted(bool muted);
-  // Atomic: written on the event_loop (widget callback) but read from the
+  // Atomic: written on the UI task (widget callback) but read from the
   // httpd task (the /mic_probe privacy gate + the satellite mute predicate).
   bool mic_muted() const { return mic_muted_.load(); }
 
  private:
   espos_voice::WyomingSatellite* sat_ = nullptr;
   espos_audio::AudioDriver* audio_ = nullptr;
-  // All three are written on the event_loop (widget callbacks) and read from
+  // All three are written on the UI task (widget callbacks) and read from
   // the httpd task (/hello's audio_state, the /mic_probe privacy gate, the
   // satellite mute predicate), so they are atomic for the same reason
   // mic_muted_ always was. Relaxed ordering is enough: each is an independent

@@ -11,14 +11,13 @@ ESP32-P4 firmware for Waveshare's capacitive-touch helm displays, which double a
 
 The X 7″ panel is physically portrait; the driver rotates it to landscape in hardware using the P4's PPA, so layouts stay landscape and rotation costs no CPU. The X series' 8″ and 10.1″ panels use a different controller (JD9365) and are not supported yet.
 
-**2.x runs on [espOS](https://github.com/dirkwa/espOS)** (pure ESP-IDF 6, no
-Arduino, no SensESP): WiFi + provisioning portal, the config store and web
+**2.x runs on [espOS](https://github.com/signalk-espOS/espOS)** (pure ESP-IDF 6): WiFi + provisioning portal, the config store and web
 UI, SignalK discovery / access token / delta stream in both directions,
 logs, core dumps and signed OTA with rollback all come from the `espos/`
 submodule; this repository is the panel on top — display HAL, LVGL, the
 JSON Layout Player and (in later 2.x phases) audio/voice, the N2K gateway
-and the BLE gateway. 1.x (PlatformIO + SensESP) lives on the `master`
-branch until 2.x reaches feature parity.
+and the BLE gateway. The 1.x releases were an Arduino build and are no
+longer maintained.
 
 The UI is **runtime-loadable**: instead of rebuilding firmware per layout change, the device boots a JSON layout, renders it with LVGL widgets, and binds each widget to a SignalK path over WebSocket. Push a new layout via HTTP from [signalk-hmi-designer](https://github.com/dirkwa/signalk-hmi-designer) and the screen swaps atomically — no flash, no reboot.
 
@@ -164,7 +163,7 @@ Wake sources:
 ## Build & flash
 
 Pure ESP-IDF, pinned to the version in `.idf-version` (the same one espOS
-pins). No PlatformIO, no Arduino.
+pins).
 
 ```bash
 git clone --recursive https://github.com/dirkwa/espos-p4-cockpit   # espos/ is a submodule
@@ -298,9 +297,8 @@ Or open the SK admin UI, launch **HMI Designer**, point it at `http://<device-ip
 ## Related projects
 
 - [signalk-hmi-designer](https://github.com/dirkwa/signalk-hmi-designer) — the SignalK webapp that designs and pushes layouts (drag-and-drop canvas, pixel-perfect WASM preview, live mirror mode).
-- [sensesp-p4-cockpit-wasm](https://github.com/dirkwa/sensesp-p4-cockpit-wasm) — the same `widget_factory.cpp` compiled to WebAssembly so the designer can render layouts pixel-identically to the device without one being connected.
-- [espOS](https://github.com/dirkwa/espOS) — the ESP-IDF 6 runtime under 2.x (submodule `espos/`).
-- **sensesp-cockpit-display / sensesp-n2k-gateway / sensesp-ble-gateway / sensesp-wyoming-satellite** — the 1.x Arduino libraries; their contents are being folded into `components/` here during the 2.x port.
+- [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm) — the same `widget_factory.cpp` compiled to WebAssembly so the designer can render layouts pixel-identically to the device without one being connected.
+- [espOS](https://github.com/signalk-espOS/espOS) — the ESP-IDF 6 runtime under 2.x (submodule `espos/`).
 
 ## License
 

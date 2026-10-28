@@ -12,8 +12,7 @@ stream in and out (`espos_sk_subscribe`, `espos_sk_put`), the SignalK REST
 client (`espos_sk_http.h`: `espos_sk_http_get`, `espos_sk_get_value/meta`),
 mDNS (`espos_mdns_add_service`), the device watchdog policy
 (`espos_health.h`), events (`espos_event.h`), logs, core dump and signed OTA
-are espOS; this repo is the panel on top. SensESP and PlatformIO are gone
-(1.x lives on `master`).
+are espOS; this repo is the panel on top.
 
 Companion projects:
 - **signalk-hmi-designer** — the SignalK webapp that designs and pushes
@@ -23,16 +22,12 @@ Companion projects:
   (with host tests), panel-specific ones stay here. Fixes found while
   debugging this panel follow the same rule — see
   [Fixing espOS from here](#fixing-espos-from-here).
-- **sensesp-cockpit-display / -n2k-gateway** — the 1.x Arduino libraries,
-  now folded into `components/` here (`cockpit_hal`, `cockpit_n2k`). They
-  stay in place for 1.x on `master`; 2.x does not link them.
-  **sensesp-wyoming-satellite** is archived: the voice satellite moved to
-  espOS as `espos_voice` (protocol, TCP server, esp-sr wake engine) plus
-  `espos_audio` (the `AudioDriver` contract). The board driver stays here
-  as `cockpit_hal::WaveshareAudio`, which implements that contract.
-  **sensesp-ble-gateway** is deliberately not ported: 1.x linked it but
-  never instantiated it, and BLE scanning through the C6 is blocked
-  upstream.
+- **Voice** is espOS's `espos_voice` (Wyoming protocol, TCP server,
+  esp-sr wake engine) plus `espos_audio` (the `AudioDriver` contract). The
+  board driver stays here as `cockpit_hal::WaveshareAudio`, which
+  implements that contract.
+- **BLE** is not part of the panel: BLE scanning through the C6 is blocked
+  upstream, and the BLE gateway is its own firmware (espos-ble-gateway).
 
 ## Where to start reading
 
@@ -313,7 +308,7 @@ when the bump lands.
 - **No AI attribution anywhere.** No "Co-Authored-By: Claude", no
   CLAUDE.md content in the repo body, no AI-tool mentions in commits
   / PRs / code.
-- **Code review**: `cr review --committed --base master` on a feature
+- **Code review**: `cr review --committed --base main` on a feature
   branch (plain text is the default; the older `--plain --type committed`
   spelling now errors out). Redirect to a file the first time — `cr` is
   rate-limited ~50 min between runs, so unsaved output is gone for an

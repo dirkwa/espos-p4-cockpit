@@ -296,7 +296,7 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
 
 #### `voice`
 - Press-and-hold push-to-talk button for the on-board Wyoming voice satellite. The widget itself only does two things: it drives the satellite's PTT held-state — **held on press, released on lift or when the press is lost** — and it reflects the satellite's state in the caption. It takes **no `bind`** and never touches SignalK — it is a panel-local action, like the `@audio_mute` toggle.
-- What happens while held is the satellite's job (see the sensesp-wyoming-satellite library), not the widget's: the satellite streams the panel mic to the orchestrator (signalk-wyoming / Home Assistant), which transcribes it and publishes the text to `voice.command`. The panel never publishes.
+- What happens while held is the satellite's job (espOS `espos_voice`), not the widget's: the satellite streams the panel mic to the orchestrator (signalk-wyoming / Home Assistant), which transcribes it and publishes the text to `voice.command`. The panel never publishes.
 - Caption by satellite state: the configured `label` (default `TALK`) when idle, **`LISTENING`** (green) once a pipeline is active, `…` (grey) when no orchestrator is connected.
 - Requires an orchestrator to have armed the satellite (`run-satellite`); when the satellite is output-only (`pause-satellite`) a press is a no-op.
 - Extra fields: `label` (idle caption, default `TALK`), `bg_color`, `fg_color`.

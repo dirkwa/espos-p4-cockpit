@@ -1,8 +1,8 @@
 /**
  * LVGL 9.x configuration for the espOS cockpit (components/cockpit_hal).
  *
- * This file must be found by LVGL's build system. It's included via
- * -DLV_CONF_INCLUDE_SIMPLE in platformio.ini build_flags.
+ * LVGL finds it through LV_CONF_PATH, set in the top-level
+ * CMakeLists.txt; LVGL's own Kconfig configuration is switched off.
  */
 
 #ifndef LV_CONF_H
