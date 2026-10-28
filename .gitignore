@@ -1,3 +1,8 @@
+# A 1.x checkout kept WiFi credentials, the SK host and the wake word in
+# platformio_local.ini. Nothing reads it any more, but an old working tree
+# may still hold one, and it must never be staged.
+platformio_local.ini
+
 # dependencies.lock is COMMITTED, not ignored: this is an application, and an
 # application pins its registry dependencies exactly through its lock so CI
 # builds the same binary a developer just flashed. Without it the component
