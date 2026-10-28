@@ -77,8 +77,8 @@ class LayoutManager {
   ApplySource active_source_ = ApplySource::Boot;
   PostSwapHook post_swap_;
   // Paths the currently-applied layout binds. Used to detect whether
-  // the next swap introduces brand-new paths (which would require a
-  // SK WS reconnect for the subscription to include them).
+  // the next swap introduces brand-new paths, whose values the post-swap
+  // hook seeds via REST.
   std::set<std::string> known_paths_;
 };
 
