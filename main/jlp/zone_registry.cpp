@@ -100,7 +100,7 @@ void ZoneRegistry::apply_meta(const std::string& path,
   // No per-path logging here — apply_meta fires once per bound path in
   // a burst right after every layout push (sendMeta=all rebroadcast),
   // and the remote-log TCP write per line was itself a meaningful chunk
-  // of the event_loop stall we care about avoiding.
+  // of the UI-task stall we care about avoiding.
   if (!changed) return;
   // Notify the bound subject so widget observers re-fire and pick
   // up the just-loaded description / zones. The observer reads
@@ -127,13 +127,9 @@ const std::string& ZoneRegistry::description(const std::string& path) const {
 }
 
 void ZoneRegistry::hook_sk_ws() {
-  // Meta is now consumed per-path: SubjectRegistry::get_or_create
-  // creates one SKMetadataListener alongside each path's value listener,
-  // and its event_loop-side LambdaConsumer calls apply_meta directly.
-  // The removed SKWSClient::on_meta wildcard fired on the WS task and
-  // needed the pending_/drain buffer to keep from flooding event_loop;
-  // the per-path listener already runs on event_loop, so no buffer.
-  // Kept as a no-op for the boot call site.
+  // Meta arrives per-path through SubjectRegistry's subscriptions, so
+  // there is nothing to wire here; kept for the boot call site and the
+  // WASM preview's stub.
   ESP_LOGI(TAG, "zone meta wired per-path via SubjectRegistry");
 }
 

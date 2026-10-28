@@ -8,32 +8,9 @@ partition table + bootloader actually need.
 """
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
-
-
-def find_packaged_srmodels(chip: str) -> Path | None:
-    """Locate a prebuilt srmodels.bin (WakeNet model partition).
-
-    With esp-sr in the ESP-IDF build, `idf.py build` writes srmodels.bin
-    into the build dir itself (phase 2 of the espOS port). This fallback
-    finds the copy an older PlatformIO/pioarduino install shipped, for
-    machines that still have one.
-    """
-    root = Path(
-        os.environ.get("PLATFORMIO_CORE_DIR", Path.home() / ".platformio")
-    ) / "packages" / "framework-arduinoespressif32-libs"
-    if not root.is_dir():
-        return None
-    # Prefer the exact chip dir, then its variant spellings (esp32p4_es).
-    candidates = [root / chip / "esp_sr" / "srmodels.bin"]
-    candidates += sorted(root.glob(f"{chip}_*/esp_sr/srmodels.bin"))
-    for c in candidates:
-        if c.is_file():
-            return c
-    return None
 
 
 def main() -> int:
@@ -70,10 +47,6 @@ def main() -> int:
     # WakeNet is back (phase 2): an empty "model" partition means a dead
     # wake word that OTA cannot repair, hence --require-model.
     by_basename = {p.name: p for p in all_files}
-    packaged_srmodels = find_packaged_srmodels(args.chip)
-    if packaged_srmodels is not None and "srmodels.bin" not in by_basename:
-        print(f"using packaged model image: {packaged_srmodels}")
-        by_basename["srmodels.bin"] = packaged_srmodels
 
     mandatory_roles = {
         "bootloader": "bootloader.bin",

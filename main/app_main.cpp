@@ -278,7 +278,7 @@ esp_err_t panel_up(void*) {
     // After a layout swap that introduces new paths, seed their values via
     // REST (SK only streams on change); espOS subscribes them itself.
     jlp::layout_manager().set_post_swap_hook(
-        [](bool new_paths_introduced, const std::set<std::string>& new_paths, jlp::ApplySource src,
+        [](bool /*new_paths_introduced*/, const std::set<std::string>& new_paths, jlp::ApplySource src,
            const std::set<std::string>& all_paths) {
           const bool boot = src == jlp::ApplySource::BootStore || src == jlp::ApplySource::BootFetched;
           const std::set<std::string>& to_fetch = boot ? all_paths : new_paths;
@@ -289,7 +289,6 @@ esp_err_t panel_up(void*) {
           if (espos_sk_get_server(&srv) == ESP_OK) {
             jlp::zone_fetch_for_paths(std::vector<std::string>(to_fetch.begin(), to_fetch.end()));
           }
-          if (new_paths_introduced) jlp::subscribe_new_paths(new_paths);
         });
     jlp::zones().hook_sk_ws();
     jlp::notifications().hook_sk_ws();

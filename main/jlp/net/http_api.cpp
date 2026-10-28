@@ -72,7 +72,7 @@ esp_err_t layout_post(httpd_req_t* req) {
     total += n;
   }
 
-  // Hop onto the event_loop task to do the swap, then wait for the
+  // Hop onto the UI task to do the swap, then wait for the
   // result. The handler is design-time only — brief blocking is fine.
   auto result = std::make_shared<ApplyResult>();
   SemaphoreHandle_t done = xSemaphoreCreateBinary();
@@ -88,7 +88,7 @@ esp_err_t layout_post(httpd_req_t* req) {
   });
 
   // 25s budget for the apply: build is fast (~hundreds of ms for a
-  // 20-widget layout), but the event_loop task may be backed up
+  // 20-widget layout), but the UI task may be backed up
   // draining incoming SK WS deltas after a server reconnect. 25s
   // covers that drain without giving up on a healthy layout. The
   // designer-side proxy timeout is 30s, which leaves room for the
@@ -350,7 +350,7 @@ struct ScreenshotResult {
   std::vector<uint8_t> pixels;
 };
 
-// Runs on the event_loop task. Takes a snapshot of the active screen.
+// Runs on the UI task. Takes a snapshot of the active screen.
 // LVGL's internal allocator can't give us a 1.2MB RGB565 buffer
 // (it's not PSRAM-aware in this configuration), so we allocate the
 // pixel store ourselves in PSRAM and wrap it via lv_draw_buf_init.
@@ -465,15 +465,15 @@ static bool encode_rgb565_to_jpeg(const ScreenshotResult& src,
 }
 
 // Single-flight guard. Each screenshot takes an lv_snapshot (1.2 MB
-// PSRAM alloc) + JPEG encode on the event_loop task — hundreds of ms
+// PSRAM alloc) + JPEG encode on the UI task — hundreds of ms
 // each. The designer's live-mirror mode polls /screenshot in a tight
-// loop; if several requests arrive faster than event_loop can serve
+// loop; if several requests arrive faster than the UI task can serve
 // them they stack up as deferred tasks and starve everything else on
-// event_loop (layout apply, the n2k heartbeat, the notifications
+// the UI task (layout apply, the n2k heartbeat, the notifications
 // drain). A push during that window times out -> "device proxy 504".
 //
 // Serve at most one screenshot at a time. A second concurrent request
-// gets 429 immediately instead of queuing more event_loop work; the
+// gets 429 immediately instead of queuing more UI-task work; the
 // mirror loop just retries on its next iteration.
 static std::atomic<bool> g_screenshot_busy{false};
 

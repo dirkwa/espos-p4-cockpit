@@ -5,7 +5,7 @@
 namespace jlp {
 
 // Backlight power-save manager. Polls LVGL's input-inactivity counter
-// once per second on the event_loop task and turns the panel backlight
+// once per second on the UI task and turns the panel backlight
 // off after the configured idle timeout. Any touch event resets the
 // counter automatically (LVGL does this), notifications and layout
 // pushes wake explicitly via wake().
@@ -13,7 +13,7 @@ namespace jlp {
 // 0 = disabled (backlight always on at on_brightness).
 class IdleDimmer {
  public:
-  // Wires the 1 Hz poll into event_loop. Call once at boot, after
+  // Wires the 1 Hz poll into the UI task. Call once at boot, after
   // lvgl_init().
   void init();
 

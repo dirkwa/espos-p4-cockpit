@@ -13,7 +13,7 @@ class StatusOverlay {
  public:
   void init();
 
-  // Setters; safe to call from the event_loop task.
+  // Setters; safe to call from the UI task.
   void set_hostname(const char* hostname);
   void set_wifi(const char* line);                   // "MOIN -58dBm" or "down"
   void set_sk(const char* line);                     // "ok" / "connecting" ...
@@ -21,8 +21,8 @@ class StatusOverlay {
   void set_uptime_heap(uint32_t uptime_s, uint32_t free_heap);
 
   // Record the configured SK server so the connection-lost banner can
-  // name it. Call once at boot with the same host/port handed to the
-  // SensESP builder.
+  // name it. Call once at boot with the server espOS selected
+  // (espos_sk_get_server).
   void set_sk_server(const char* host, uint16_t port);
 
   // Show / hide a prominent full-width "connection lost" banner. Lives

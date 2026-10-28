@@ -128,7 +128,7 @@ class NotificationsRegistry {
    *  doesn't drag the helm out of idle).
    *
    *  Only meaningful when read inside an on_change() callback
-   *  on the event_loop task. */
+   *  on the UI task. */
   bool last_change_was_escalation() const {
     return last_change_was_escalation_;
   }
@@ -151,7 +151,7 @@ class NotificationsRegistry {
 
   /** Register a change observer. Returns an opaque token; the caller
    *  must call `off_change(token)` before any captured pointer is
-   *  destroyed. Fires on the event_loop task. */
+   *  destroyed. Fires on the UI task. */
   using Observer = std::function<void()>;
   using ObserverToken = uint32_t;
   ObserverToken on_change(Observer cb) {

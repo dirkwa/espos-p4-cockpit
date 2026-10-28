@@ -346,7 +346,7 @@ void WaveshareAudio::enqueue(const int16_t* samples, size_t frames, bool cue) {
 
   if (xQueueSend(queue_, &clip, 0) != pdPASS) {
     // Queue full. A chime is disposable, so drop it -- the caller is often the
-    // LVGL event_loop task and must never block on audio.
+    // UI task and must never block on audio.
     if (!cue) {
       free(clip.samples);
       return;
