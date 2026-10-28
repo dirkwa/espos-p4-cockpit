@@ -104,11 +104,4 @@ void put_notification_ack(const std::string& path_after_prefix) {
   if (err != ESP_OK) ESP_LOGW(TAG, "ACK not sent: %s", esp_err_to_name(err));
 }
 
-// espOS subscribes incrementally by itself when SubjectRegistry binds a
-// new path, so there is nothing to do here any more; kept for the
-// post-swap hook's call site.
-void subscribe_new_paths(const std::set<std::string>& paths) {
-  if (!paths.empty()) ESP_LOGI(TAG, "%u new path(s) subscribed by espOS", (unsigned)paths.size());
-}
-
 }  // namespace jlp
