@@ -46,6 +46,54 @@ namespace {
 
 constexpr size_t kMaxBodyBytes = 64 * 1024;
 
+// Seconds a request body may stall before the handler gives up with 408.
+// One httpd task serves every request, and lru_purge cannot reclaim a
+// socket whose handler is running, so a client that sends a Content-Length
+// and then stops blocks the whole API, the designer's mirror included, for
+// this long. httpd hands back body bytes that arrived with the headers
+// only after one more wait, so the worst case is twice this. A 64 KB
+// layout on the LAN arrives in well under a second; twice this stays
+// below the designer's 30 s proxy timeout.
+constexpr int kRecvWaitS = 10;
+
+// What a handler waits on while its lambda runs on the UI task. Shared with
+// the lambda: a handler that times out returns, but the lambda is still
+// queued and gives the semaphore later, so it must outlive both sides.
+// `state` settles which side was last when the handler gave up.
+struct UiHop {
+  enum : int { kPending = 0, kDone = 1, kAbandoned = 2 };
+  SemaphoreHandle_t sem = xSemaphoreCreateBinary();
+  std::atomic<int> state{kPending};
+  UiHop() = default;
+  UiHop(const UiHop&) = delete;
+  UiHop& operator=(const UiHop&) = delete;
+  ~UiHop() {
+    if (sem) vSemaphoreDelete(sem);
+  }
+};
+
+// Reads exactly content_len bytes of the request body into *body. On failure
+// it has already answered the request and returns false.
+bool recv_body(httpd_req_t* req, std::string* body) {
+  body->resize(req->content_len);
+  int total = 0;
+  while (total < req->content_len) {
+    int n = httpd_req_recv(req, &(*body)[total], req->content_len - total);
+    if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+      httpd_resp_set_status(req, "408 Request Timeout");
+      httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"body not received\"}");
+      return false;
+    }
+    if (n <= 0) {
+      httpd_resp_set_status(req, "500 Internal Server Error");
+      httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"recv failed\"}");
+      return false;
+    }
+    total += n;
+  }
+  return true;
+}
+
 esp_err_t layout_post(httpd_req_t* req) {
   if (req->content_len == 0) {
     httpd_resp_set_status(req, "400 Bad Request");
@@ -59,32 +107,21 @@ esp_err_t layout_post(httpd_req_t* req) {
   }
 
   std::string body;
-  body.resize(req->content_len);
-  int total = 0;
-  while (total < req->content_len) {
-    int n = httpd_req_recv(req, &body[total], req->content_len - total);
-    if (n <= 0) {
-      if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
-      httpd_resp_set_status(req, "500 Internal Server Error");
-      httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"recv failed\"}");
-      return ESP_FAIL;
-    }
-    total += n;
-  }
+  if (!recv_body(req, &body)) return ESP_FAIL;
 
   // Hop onto the UI task to do the swap, then wait for the
   // result. The handler is design-time only — brief blocking is fine.
   auto result = std::make_shared<ApplyResult>();
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) {
+  auto hop = std::make_shared<UiHop>();
+  if (!hop->sem) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"semaphore\"}");
     return ESP_FAIL;
   }
 
-  cockpit_hal::ui::post([body, result, done]() mutable {
+  cockpit_hal::ui::post([body = std::move(body), result, hop]() mutable {
     *result = layout_manager().apply(body, ApplySource::PostLayout);
-    xSemaphoreGive(done);
+    xSemaphoreGive(hop->sem);
   });
 
   // 25s budget for the apply: build is fast (~hundreds of ms for a
@@ -93,14 +130,13 @@ esp_err_t layout_post(httpd_req_t* req) {
   // covers that drain without giving up on a healthy layout. The
   // designer-side proxy timeout is 30s, which leaves room for the
   // 504 to actually reach the browser instead of being aborted.
-  if (xSemaphoreTake(done, pdMS_TO_TICKS(25000)) != pdTRUE) {
-    vSemaphoreDelete(done);
+  if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(25000)) != pdTRUE) {
+    // The apply is still queued and will run (and persist) later.
     httpd_resp_set_status(req, "504 Gateway Timeout");
-    httpd_resp_sendstr(req,
-                       "{\"ok\":false,\"err\":\"apply timed out\"}");
+    httpd_resp_sendstr(
+        req, "{\"ok\":false,\"err\":\"apply timed out; it may still apply\"}");
     return ESP_OK;
   }
-  vSemaphoreDelete(done);
 
   httpd_resp_set_type(req, "application/json");
   // Build responses via ArduinoJson so user-controlled strings
@@ -474,7 +510,9 @@ static bool encode_rgb565_to_jpeg(const ScreenshotResult& src,
 //
 // Serve at most one screenshot at a time. A second concurrent request
 // gets 429 immediately instead of queuing more UI-task work; the
-// mirror loop just retries on its next iteration.
+// mirror loop just retries on its next iteration. A request that gave
+// up waiting leaves the flag to its snapshot, which clears it when it
+// has run.
 static std::atomic<bool> g_screenshot_busy{false};
 
 esp_err_t screenshot_get(httpd_req_t* req) {
@@ -485,9 +523,13 @@ esp_err_t screenshot_get(httpd_req_t* req) {
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"screenshot in flight\"}");
     return ESP_OK;
   }
-  // RAII-style release: any return path below clears the flag.
+  // RAII-style release: any return path below clears the flag, except a
+  // timeout that hands it to the still-queued snapshot.
   struct BusyGuard {
-    ~BusyGuard() { g_screenshot_busy.store(false); }
+    bool release = true;
+    ~BusyGuard() {
+      if (release) g_screenshot_busy.store(false);
+    }
   } busy_guard;
 
   // Pick format from `?fmt=`. Default jpeg — that's what the designer's
@@ -505,23 +547,30 @@ esp_err_t screenshot_get(httpd_req_t* req) {
   }
 
   auto result = std::make_shared<ScreenshotResult>();
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) {
+  auto hop = std::make_shared<UiHop>();
+  if (!hop->sem) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_sendstr(req, "semaphore alloc failed");
     return ESP_FAIL;
   }
-  cockpit_hal::ui::post([result, done]() {
+  cockpit_hal::ui::post([result, hop]() {
     take_screenshot(result.get());
-    xSemaphoreGive(done);
+    int expected = UiHop::kPending;
+    if (!hop->state.compare_exchange_strong(expected, UiHop::kDone)) {
+      // The handler has given up and left the busy flag to us.
+      g_screenshot_busy.store(false);
+    }
+    xSemaphoreGive(hop->sem);
   });
-  if (xSemaphoreTake(done, pdMS_TO_TICKS(5000)) != pdTRUE) {
-    vSemaphoreDelete(done);
+  if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    int expected = UiHop::kPending;
+    if (hop->state.compare_exchange_strong(expected, UiHop::kAbandoned)) {
+      busy_guard.release = false;
+    }
     httpd_resp_set_status(req, "504 Gateway Timeout");
     httpd_resp_sendstr(req, "snapshot timeout");
     return ESP_OK;
   }
-  vSemaphoreDelete(done);
 
   if (!result->ok) {
     httpd_resp_set_status(req, "500 Internal Server Error");
@@ -614,18 +663,8 @@ static esp_err_t screen_post(httpd_req_t* req) {
     return ESP_OK;
   }
 
-  std::string body(req->content_len, '\0');
-  int total = 0;
-  while (total < req->content_len) {
-    int n = httpd_req_recv(req, &body[total], req->content_len - total);
-    if (n <= 0) {
-      if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
-      httpd_resp_set_status(req, "500 Internal Server Error");
-      httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"recv failed\"}");
-      return ESP_FAIL;
-    }
-    total += n;
-  }
+  std::string body;
+  if (!recv_body(req, &body)) return ESP_FAIL;
 
   JsonDocument doc;
   if (deserializeJson(doc, body) != DeserializationError::Ok) {
@@ -647,25 +686,23 @@ static esp_err_t screen_post(httpd_req_t* req) {
   auto found = std::make_shared<bool>(false);
   auto active = std::make_shared<std::string>();
   auto known = std::make_shared<std::vector<std::string>>();
-  SemaphoreHandle_t done = xSemaphoreCreateBinary();
-  if (!done) {
+  auto hop = std::make_shared<UiHop>();
+  if (!hop->sem) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"semaphore\"}");
     return ESP_FAIL;
   }
-  cockpit_hal::ui::post([want, found, active, known, done]() {
+  cockpit_hal::ui::post([want, found, active, known, hop]() {
     *found = layout_manager().select_screen(want);
     *active = layout_manager().active_screen();
     *known = layout_manager().screen_ids();
-    xSemaphoreGive(done);
+    xSemaphoreGive(hop->sem);
   });
-  if (xSemaphoreTake(done, pdMS_TO_TICKS(5000)) != pdTRUE) {
-    vSemaphoreDelete(done);
+  if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
     httpd_resp_set_status(req, "504 Gateway Timeout");
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"select timed out\"}");
     return ESP_OK;
   }
-  vSemaphoreDelete(done);
 
   if (!*found) {
     JsonDocument out;
@@ -738,19 +775,18 @@ esp_err_t hello_get(httpd_req_t* req) {
   {
     auto active = std::make_shared<std::string>();
     auto ids = std::make_shared<std::vector<std::string>>();
-    SemaphoreHandle_t done = xSemaphoreCreateBinary();
-    if (done) {
-      cockpit_hal::ui::post([active, ids, done]() {
+    auto hop = std::make_shared<UiHop>();
+    if (hop->sem) {
+      cockpit_hal::ui::post([active, ids, hop]() {
         *active = layout_manager().active_screen();
         *ids = layout_manager().screen_ids();
-        xSemaphoreGive(done);
+        xSemaphoreGive(hop->sem);
       });
-      if (xSemaphoreTake(done, pdMS_TO_TICKS(2000)) == pdTRUE) {
+      if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(2000)) == pdTRUE) {
         resp["active_screen"] = *active;
         JsonArray arr = resp["screens"].to<JsonArray>();
         for (const auto& s : *ids) arr.add(s);
       }
-      vSemaphoreDelete(done);
     }
   }
   // Persisted panel-local audio state, so it is checkable without a serial
@@ -899,7 +935,7 @@ void http_api_start(uint16_t port) {
   config.server_port = port;
   config.stack_size = 8192;
   config.ctrl_port = 32768 + port;  // unique per httpd instance
-  config.recv_wait_timeout = 120;
+  config.recv_wait_timeout = kRecvWaitS;
   config.send_wait_timeout = 30;
   config.lru_purge_enable = true;
   // Keep ahead of the registrations below (9 today) — httpd aborts with
