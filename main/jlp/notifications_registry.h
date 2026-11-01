@@ -185,7 +185,14 @@ class NotificationsRegistry {
   // overlay again. The alarm is not re-firing because it escalated; it
   // never stopped. So a clear on a path we just acked leaves the ack in
   // place, and only a clear we did NOT cause re-arms it.
-  std::unordered_set<std::string> self_cleared_;
+  //
+  // Path -> esp_timer time (us) of the ack. Only a clear inside a short
+  // window counts as the echo (take_self_clear()): an ACK that was never
+  // sent produces no echo, and its entry must not swallow the real clear.
+  std::unordered_map<std::string, int64_t> self_cleared_;
+  // Removes the path's self_cleared_ entry; true if it was recent enough
+  // for this clear to be our echo.
+  bool take_self_clear(const std::string& path_after_prefix);
 
   // Locally-acknowledged paths -> the severity they were acked at.
   // Used to suppress the overlay while the bus keeps re-asserting,
