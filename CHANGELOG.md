@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.6.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.6...v1.6.0) (2026-11-01)
+
+
+### Added
+
+* **license:** relicense under Apache-2.0 ([#198](https://github.com/dirkwa/espos-p4-cockpit/issues/198)) ([c3eaeed](https://github.com/dirkwa/espos-p4-cockpit/commit/c3eaeed9feaeb747ea90f3871bea04b74650019d))
+
+
+### Fixed
+
+* bump espOS to v0.24.0 ([#192](https://github.com/dirkwa/espos-p4-cockpit/issues/192)) ([0f28898](https://github.com/dirkwa/espos-p4-cockpit/commit/0f28898910fddb8e2efff78907f2ba76d69f26c9))
+* bump espOS to v0.26.0 ([#199](https://github.com/dirkwa/espos-p4-cockpit/issues/199)) ([916483d](https://github.com/dirkwa/espos-p4-cockpit/commit/916483df650730dca7d730da86bd59b4722650e1))
+* keep the legacy platformio_local.ini ignored ([#196](https://github.com/dirkwa/espos-p4-cockpit/issues/196)) ([f5197e2](https://github.com/dirkwa/espos-p4-cockpit/commit/f5197e2307458bb8fd2204cf04bf4ebe57b6fd50))
+
+
+### Changed
+
+* drop SensESP and PlatformIO leftovers ([#194](https://github.com/dirkwa/espos-p4-cockpit/issues/194)) ([54ec7ab](https://github.com/dirkwa/espos-p4-cockpit/commit/54ec7ab23ebb5507905380b918f38cccf270ce13))
+
 ## [1.5.6](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.5...v1.5.6) (2026-10-14)
 
 
