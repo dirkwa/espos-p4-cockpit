@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "cockpit_hal/waveshare_audio.h"
 
 #include <climits>

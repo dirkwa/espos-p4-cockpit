@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+// SPDX-License-Identifier: Apache-2.0
 #include "wake_discover.h"
 
 #include <arpa/inet.h>

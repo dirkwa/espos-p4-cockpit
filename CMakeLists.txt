@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+# SPDX-License-Identifier: Apache-2.0
 #
 # espos-p4-cockpit: a pure ESP-IDF 6 project. WiFi, config, the web UI,
 # SignalK discovery/token/stream and REST client, mDNS, the health watchdog

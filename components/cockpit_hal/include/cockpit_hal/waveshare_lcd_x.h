@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+/* SPDX-License-Identifier: Apache-2.0
  *
  * Waveshare ESP32-P4-WIFI6-Touch-LCD-X, 7" variant: a 720x1280 PORTRAIT
  * ILI9881C over MIPI-DSI (2 lanes), GT927 touch on I2C (SDA 7, SCL 8) at
