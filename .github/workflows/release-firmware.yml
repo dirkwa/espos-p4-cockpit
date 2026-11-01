@@ -290,6 +290,9 @@ jobs:
           # omits it is how a panel is sent firmware for a different display.
           cp p4_cockpit-merged.bin "dist/p4_cockpit-${VERSION}-${BOARD}-merged.bin"
           cp build/cockpit.bin     "dist/p4_cockpit-${VERSION}-${BOARD}-ota.bin"
+          # Apache-2.0 4(a): whoever downloads only a binary still gets the
+          # licence, and the notices name the model licence esp-sr ships under.
+          cp LICENSE THIRD-PARTY-NOTICES.md dist/
           ls -l dist/
 
       - name: Upload build artifact
@@ -730,7 +733,10 @@ jobs:
           # silently incomplete release is worse than a failed one, because the
           # registry would index it and offer owners of that chip nothing.
           fail_on_unmatched_files: true
-          files: dist/*.bin
+          files: |
+            dist/*.bin
+            dist/LICENSE
+            dist/THIRD-PARTY-NOTICES.md
           body: ${{ steps.notes.outputs.body }}
 
       # Any failure after the mirror pushed, not only a failed attach. The
