@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+// SPDX-License-Identifier: Apache-2.0
 #include "sk_put.h"
 
 #include <ArduinoJson.h>

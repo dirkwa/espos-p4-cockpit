@@ -28,10 +28,9 @@ settings as much as to code.
 Open the espOS PR first, then bump the submodule here in a separate PR.
 See [Fixing espOS from here](AGENTS.md#fixing-espos-from-here).
 
-## Contributor license grant
+## Licensing of contributions
 
-By submitting a pull request or patch, you grant Dirk Wahrheit a perpetual,
-worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce,
-modify, publish, sublicense and distribute your contribution, and to relicense
-it under any terms, including as part of espos-p4-cockpit releases. You confirm
-that you have the right to grant this.
+espos-p4-cockpit is licensed under the Apache License 2.0. By submitting a pull
+request or patch, you agree that your contribution is licensed under the same
+licence, as section 5 of it provides, and confirm that you have the right to do
+so.

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+/* SPDX-License-Identifier: Apache-2.0
  *
  * Selects the panel driver for the board this firmware is built for
  * (CONFIG_COCKPIT_BOARD_*, see the component's Kconfig) and exposes it under

@@ -302,21 +302,12 @@ Or open the SK admin UI, launch **HMI Designer**, point it at `http://<device-ip
 
 ## License
 
-espos-p4-cockpit (and sensesp-p4-cockpit 1.0.0 and later, its previous name) is
-**source available, not open source**.
-See [LICENSE.md](LICENSE.md).
+Apache-2.0, see [LICENSE](LICENSE). The vendored display drivers and other
+third-party code are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-**You may**, free of charge: run it on your own boat or fleet, private or
-commercial; use it for internal company operations; modify it for your own use;
-use it in education and research; and provide professional services around it.
-
-**You may not**: redistribute it, or publish a modified version of it — as
-source, firmware images or otherwise. Verbatim copies of official releases
-(including the published firmware binaries) may be mirrored and cached.
-
-Releases 0.3.0 and earlier were published without a license file. The vendored
-Espressif display drivers under `components/` remain Apache-2.0; see
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Releases 1.0.0 through 1.5.6, including those published as sensesp-p4-cockpit
+(its previous name), shipped under a source-available licence and keep those
+terms; 0.3.0 and earlier were published without a licence file.
 
 ## Contributing
 

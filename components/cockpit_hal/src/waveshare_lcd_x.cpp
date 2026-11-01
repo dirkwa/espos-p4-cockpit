@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution */
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "sdkconfig.h"
 #if CONFIG_COCKPIT_BOARD_WAVESHARE_LCD_X_7
 

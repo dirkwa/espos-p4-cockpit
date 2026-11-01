@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+# SPDX-License-Identifier: Apache-2.0
 file(GLOB_RECURSE jlp_sources ${CMAKE_CURRENT_LIST_DIR}/jlp/*.cpp)
 # espos_ota is named although nothing here calls it: consumers build with
 # MINIMAL_BUILD and espos_start() only starts the optional stacks that are in

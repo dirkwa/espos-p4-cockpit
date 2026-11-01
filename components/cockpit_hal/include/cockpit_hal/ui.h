@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+/* SPDX-License-Identifier: Apache-2.0
  *
  * The UI thread: one FreeRTOS task owns LVGL (lv_timer_handler + all
  * lv_* calls). Everything that arrives from other tasks — SignalK stream

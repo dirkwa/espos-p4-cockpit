@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+/* SPDX-License-Identifier: Apache-2.0
  *
  * The board's shared I2C bus (SDA 7 / SCL 8 on the Waveshare P4 boards):
  * created by the touch HAL, reused by the audio codecs.

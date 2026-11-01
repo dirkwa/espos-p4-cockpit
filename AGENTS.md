@@ -276,6 +276,12 @@ when the bump lands.
 
 ## Repo conventions
 
+- **Licensing**: Apache-2.0 (`LICENSE`), like the other signalk-espOS
+  repositories; contributions come in under the same licence. New source
+  files carry `SPDX-License-Identifier: Apache-2.0`. Vendored third-party
+  code keeps its own headers and is listed in `THIRD-PARTY-NOTICES.md`.
+  Registry dependencies are linked into the public firmware image, so
+  check their licence before adding one (no GPL, see invariant 6).
 - **Build/test gate**: `scripts/build.sh` must succeed with zero warnings.
   There are no host tests in this repo (espOS has them) — verify on device
   via the espOS log ring + curl probes.

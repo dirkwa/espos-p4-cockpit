@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+# SPDX-License-Identifier: Apache-2.0
 #
 # Both board drivers are compiled in, and each one's contents are guarded by
 # its CONFIG_COCKPIT_BOARD_* symbol so exactly one provides the panel and the

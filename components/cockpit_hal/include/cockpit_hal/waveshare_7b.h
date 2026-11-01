@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: LicenseRef-Source-Available-No-Redistribution
+/* SPDX-License-Identifier: Apache-2.0
  *
  * Waveshare ESP32-P4-WIFI6-Touch-LCD-7B: 1024x600 EK79007 over MIPI-DSI
  * (2 lanes), GT911 touch on I2C (SDA 7, SCL 8), backlight PWM on GPIO 32.
