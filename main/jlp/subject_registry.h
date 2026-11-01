@@ -28,6 +28,10 @@ struct SubjectEntry {
   // created for LV_SUBJECT_TYPE_STRING has no buffer of its own.
   char str_buf[64];
   char str_prev[64];
+  // A delta (null included) has come in since the path was (re)subscribed.
+  // The REST seed in zone_fetch was read before it arrived, so it is the
+  // older reading and skips this path. UI task only.
+  bool has_stream_value = false;
 };
 
 // Maps a widget bind -> lv_subject_t. Subjects are created lazily by
@@ -51,6 +55,9 @@ class SubjectRegistry {
    *  the right typed setter when seeding a freshly-bound subject
    *  with SK's REST-fetched initial value. */
   std::optional<SubjectKind> kind_of(const std::string& path) const;
+  /** True once the stream has delivered a delta for `path` since it was
+   *  (re)subscribed; false for an unknown path. */
+  bool has_stream_value(const std::string& path) const;
   std::vector<std::string> paths() const;
 
   // Unsubscribe paths not in `live_paths` (subjects are kept).
