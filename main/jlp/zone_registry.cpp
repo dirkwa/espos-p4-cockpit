@@ -84,7 +84,9 @@ void ZoneRegistry::apply_meta(const std::string& path,
   // An empty array is Signal K removing the zones; keeping the old ones
   // would go on tinting the widget with a stale warning or alarm.
   if (!zarr.isNull() && zarr.size() == 0) {
-    if (map_.erase(path) > 0) changed = true;
+    if (map_.erase(path) > 0) {
+      changed = true;
+    }
   } else if (!zarr.isNull()) {
     std::vector<Zone> zs;
     zs.reserve(zarr.size());

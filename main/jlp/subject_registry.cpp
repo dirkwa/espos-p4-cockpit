@@ -7,6 +7,7 @@
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk.h"
 
 #include "zone_registry.h"
@@ -28,7 +29,10 @@ void on_update(const espos_sk_update_t* u, void* arg) {
   auto* entry = static_cast<SubjectEntry*>(arg);
   if (u->value_json) {
     std::string v(u->value_json);
-    cockpit_hal::ui::post([entry, v = std::move(v)]() {
+    // Taken here, on the stream task, not when the UI task gets to it: the
+    // REST seed compares against when the value arrived.
+    const int64_t rx_us = esp_timer_get_time();
+    cockpit_hal::ui::post([entry, v = std::move(v), rx_us]() {
       lv_subject_t* s = entry->subject;
       // Any delta, null included, is newer than zone_fetch's REST seed and
       // makes it skip this path. Only a dropped non-finite float does not:
@@ -76,7 +80,7 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           break;
         }
       }
-      if (fresh) entry->has_stream_value = true;
+      if (fresh) entry->stream_rx_us = rx_us;
     });
   } else if (u->meta_json) {
     // raw meta object {units, description, zones, ...}: ZoneRegistry parses it
@@ -192,9 +196,9 @@ std::optional<SubjectKind> SubjectRegistry::kind_of(
   return it->second.entry->kind;
 }
 
-bool SubjectRegistry::has_stream_value(const std::string& path) const {
+int64_t SubjectRegistry::stream_rx_us(const std::string& path) const {
   auto it = map_.find(path);
-  return it != map_.end() && it->second.entry->has_stream_value;
+  return it == map_.end() ? 0 : it->second.entry->stream_rx_us;
 }
 
 std::vector<std::string> SubjectRegistry::paths() const {
@@ -220,7 +224,7 @@ void SubjectRegistry::garbage_collect(
       slot.sub_handle = 0;
       // Its value goes stale from here; a later layout's REST seed may
       // replace it again.
-      slot.entry->has_stream_value = false;
+      slot.entry->stream_rx_us = 0;
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
     }

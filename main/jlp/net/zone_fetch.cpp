@@ -8,6 +8,7 @@
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk_http.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -40,6 +41,7 @@ struct MetaResult {
 // here.
 struct ValueResult {
   std::string path;
+  int64_t requested_us = 0;  // esp_timer time the GET started
   bool is_float = false;
   float f = 0.0f;
   int i = 0;
@@ -83,6 +85,7 @@ void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
 // go. Like fetch_meta, this stays off the UI task; the value is extracted
 // here and the result applied in the batch drain.
 void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
+  const int64_t requested_us = esp_timer_get_time();
   char* json = nullptr;
   if (espos_sk_get_value(path.c_str(), &json) != ESP_OK) return;
 
@@ -97,6 +100,7 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
 
   ValueResult r;
   r.path = path;
+  r.requested_us = requested_us;
   // Check bool and int before float: ArduinoJson reports is<float>() true
   // for integers too, so testing float first would route an integer
   // reading through as<float>() and lose precision on large values.
@@ -148,9 +152,10 @@ void fetch_task(void* arg) {
     for (auto& vr : *values) {
       auto kind = registry().kind_of(vr.path);
       if (!kind) continue;  // path not bound by any widget
-      // A stream delta that landed after this path's GET is newer, and
-      // Signal K only sends on change; keep it.
-      if (registry().has_stream_value(vr.path)) continue;
+      // A stream delta received after this GET started may be newer than
+      // its answer, and Signal K only sends on change; keep it. One from
+      // before the GET is older than the server's current value.
+      if (registry().stream_rx_us(vr.path) > vr.requested_us) continue;
       lv_subject_t* sub = registry().lookup(vr.path);
       if (!sub) continue;
       switch (*kind) {
