@@ -46,14 +46,14 @@ namespace {
 
 constexpr size_t kMaxBodyBytes = 64 * 1024;
 
-// Seconds a request body may stall before the handler gives up with 408.
-// One httpd task serves every request, and lru_purge cannot reclaim a
+// Seconds a whole request body may take before the handler gives up with
+// 408. One httpd task serves every request, and lru_purge cannot reclaim a
 // socket whose handler is running, so a client that sends a Content-Length
-// and then stops blocks the whole API, the designer's mirror included, for
-// this long. httpd hands back body bytes that arrived with the headers
-// only after one more wait, so the worst case is twice this. A 64 KB
-// layout on the LAN arrives in well under a second; twice this stays
-// below the designer's 30 s proxy timeout.
+// and then stops, or trickles a byte every few seconds, blocks the whole
+// API, the designer's mirror included. The deadline covers the whole body;
+// a single receive can still wait this long past it, so the worst case is
+// twice this. A 64 KB layout on the LAN arrives in well under a second;
+// twice this stays below the designer's 30 s proxy timeout.
 constexpr int kRecvWaitS = 10;
 
 // What a handler waits on while its lambda runs on the UI task. Shared with
@@ -61,7 +61,9 @@ constexpr int kRecvWaitS = 10;
 // queued and gives the semaphore later, so it must outlive both sides.
 // `state` settles which side was last when the handler gave up.
 struct UiHop {
-  enum : int { kPending = 0, kDone = 1, kAbandoned = 2 };
+  // kRunning: the lambda has claimed the work, so the handler must not
+  // report it as not done.
+  enum : int { kPending = 0, kDone = 1, kAbandoned = 2, kRunning = 3 };
   SemaphoreHandle_t sem = xSemaphoreCreateBinary();
   std::atomic<int> state{kPending};
   UiHop() = default;
@@ -77,7 +79,13 @@ struct UiHop {
 bool recv_body(httpd_req_t* req, std::string* body) {
   body->resize(req->content_len);
   int total = 0;
+  const int64_t deadline = esp_timer_get_time() + int64_t{kRecvWaitS} * 1000000;
   while (total < req->content_len) {
+    if (esp_timer_get_time() > deadline) {
+      httpd_resp_set_status(req, "408 Request Timeout");
+      httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"body not received\"}");
+      return false;
+    }
     int n = httpd_req_recv(req, &(*body)[total], req->content_len - total);
     if (n == HTTPD_SOCK_ERR_TIMEOUT) {
       httpd_resp_set_status(req, "408 Request Timeout");
@@ -119,23 +127,37 @@ esp_err_t layout_post(httpd_req_t* req) {
     return ESP_FAIL;
   }
 
+  // A 504 must mean "not applied" (invariant 1: a failed push leaves the
+  // previous layout rendering). The lambda claims the work first; if the
+  // handler has already given up, it skips the apply.
   cockpit_hal::ui::post([body = std::move(body), result, hop]() mutable {
-    *result = layout_manager().apply(body, ApplySource::PostLayout);
+    int expected = UiHop::kPending;
+    if (hop->state.compare_exchange_strong(expected, UiHop::kRunning)) {
+      *result = layout_manager().apply(body, ApplySource::PostLayout);
+    }
     xSemaphoreGive(hop->sem);
   });
 
-  // 25s budget for the apply: build is fast (~hundreds of ms for a
-  // 20-widget layout), but the UI task may be backed up
-  // draining incoming SK WS deltas after a server reconnect. 25s
-  // covers that drain without giving up on a healthy layout. The
-  // designer-side proxy timeout is 30s, which leaves room for the
-  // 504 to actually reach the browser instead of being aborted.
-  if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(25000)) != pdTRUE) {
-    // The apply is still queued and will run (and persist) later.
-    httpd_resp_set_status(req, "504 Gateway Timeout");
-    httpd_resp_sendstr(
-        req, "{\"ok\":false,\"err\":\"apply timed out; it may still apply\"}");
-    return ESP_OK;
+  // 20 s for the apply to start: a build takes hundreds of ms for a
+  // 20-widget layout, but the UI task may be backed up draining incoming
+  // SK WS deltas after a server reconnect. If it has started by then, 8 s
+  // more for it to finish. Both together stay below the designer's 30 s
+  // proxy timeout, so the answer reaches the browser.
+  if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(20000)) != pdTRUE) {
+    int expected = UiHop::kPending;
+    if (hop->state.compare_exchange_strong(expected, UiHop::kAbandoned)) {
+      httpd_resp_set_status(req, "504 Gateway Timeout");
+      httpd_resp_sendstr(
+          req, "{\"ok\":false,\"err\":\"apply timed out; not applied\"}");
+      return ESP_OK;
+    }
+    if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(8000)) != pdTRUE) {
+      // Started but not finished: it will still swap in, so say so.
+      httpd_resp_set_status(req, "504 Gateway Timeout");
+      httpd_resp_sendstr(
+          req, "{\"ok\":false,\"err\":\"apply still running; check /hello\"}");
+      return ESP_OK;
+    }
   }
 
   httpd_resp_set_type(req, "application/json");
