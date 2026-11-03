@@ -33,7 +33,7 @@ void SunState::set_mode(const char* mode) {
 namespace {
 void on_mode(const espos_sk_update_t* u, void*) {
   if (!u->value_json) return;
-  // value is JSON text: "\"night\"" → night. Plain data assignment, no LVGL:
+  // value is JSON text: "\"night\"" → night. An atomic store, no LVGL:
   // safe on the stream task.
   std::string v(u->value_json);
   if (v.size() >= 2 && v.front() == '"' && v.back() == '"') v = v.substr(1, v.size() - 2);
