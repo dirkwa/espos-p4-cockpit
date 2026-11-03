@@ -113,6 +113,12 @@ class NotificationsRegistry {
    *  silences this panel. */
   [[nodiscard]] bool acknowledge(const std::string& path_after_prefix);
 
+  /** Drops the echo mark acknowledge() set, for an ACK delta that could
+   *  not be sent: no echo will come, so the next clear on the path is a
+   *  real one. The 10 s expiry stays the fallback for an ACK that went
+   *  out but never echoed back. UI task only, like acknowledge(). */
+  void forget_self_clear(const std::string& path_after_prefix);
+
   /** True if `path` is currently acknowledged. */
   bool is_acknowledged(const std::string& path_after_prefix) const;
 

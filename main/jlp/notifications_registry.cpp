@@ -192,6 +192,10 @@ std::vector<Notification> NotificationsRegistry::snapshot(
   return out;
 }
 
+void NotificationsRegistry::forget_self_clear(const std::string& path_after_prefix) {
+  self_cleared_.erase(path_after_prefix);
+}
+
 bool NotificationsRegistry::acknowledge(const std::string& path_after_prefix) {
   auto it = map_.find(path_after_prefix);
   if (it == map_.end()) {
