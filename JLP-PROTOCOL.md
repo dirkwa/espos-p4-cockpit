@@ -65,7 +65,7 @@ Apply a layout JSON. Request body: a JSON document conforming to the schema belo
 
 The device parses, validates, builds the LVGL tree under a hidden staging parent, then atomically swaps it in. If parse, validate or build fails, the prior layout stays live — **the screen never blanks** — and the device returns a non-200 with an error body. On success the layout is persisted (LittleFS on the reference firmware) so it survives reboot.
 
-Synchronous: the device replies only after the swap completes (typically <1s; absolute upper bound 10s before timing out).
+Synchronous: on success the device replies after the swap completes, typically in under 1 s.
 
 Success response (200):
 
@@ -80,6 +80,14 @@ Failure response (400 / 422 / 500):
 ```json
 { "ok": false, "err": "screen[0].widgets[3]: unknown type 'nope'" }
 ```
+
+Timeouts:
+
+| Status | `err` | Meaning |
+|---|---|---|
+| 408 | `body not received` | The body did not arrive within 10 s (a single receive can run up to 10 s past that). Nothing was queued. |
+| 504 | `apply timed out; not applied` | The apply did not start within 20 s, for instance while the UI task drained a burst of deltas. It was dropped; the previous layout stays. |
+| 504 | `apply still running; check /hello` | The apply started but did not finish within 8 s more. It still swaps in if it succeeds, so read `GET /hello` for the active layout. |
 
 ### `GET /screenshot`
 

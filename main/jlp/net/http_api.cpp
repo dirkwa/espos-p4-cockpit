@@ -138,11 +138,11 @@ esp_err_t layout_post(httpd_req_t* req) {
     xSemaphoreGive(hop->sem);
   });
 
+  // The apply waits only; the body has already been read (recv_body).
   // 20 s for the apply to start: a build takes hundreds of ms for a
   // 20-widget layout, but the UI task may be backed up draining incoming
   // SK WS deltas after a server reconnect. If it has started by then, 8 s
-  // more for it to finish. Both together stay below the designer's 30 s
-  // proxy timeout, so the answer reaches the browser.
+  // more for it to finish.
   if (xSemaphoreTake(hop->sem, pdMS_TO_TICKS(20000)) != pdTRUE) {
     int expected = UiHop::kPending;
     if (hop->state.compare_exchange_strong(expected, UiHop::kAbandoned)) {
