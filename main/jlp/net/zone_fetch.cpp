@@ -154,8 +154,9 @@ void fetch_task(void* arg) {
       if (!kind) continue;  // path not bound by any widget
       // A stream delta received after this GET started may be newer than
       // its answer, and Signal K only sends on change; keep it. One from
-      // before the GET is older than the server's current value.
-      if (registry().stream_rx_us(vr.path) > vr.requested_us) continue;
+      // before the GET is older than the server's current value. Likewise
+      // an overlapping fetch whose GET started later and already applied.
+      if (!registry().accept_seed(vr.path, vr.requested_us)) continue;
       lv_subject_t* sub = registry().lookup(vr.path);
       if (!sub) continue;
       switch (*kind) {

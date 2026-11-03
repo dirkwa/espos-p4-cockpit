@@ -196,6 +196,15 @@ std::optional<SubjectKind> SubjectRegistry::kind_of(
   return it->second.entry->kind;
 }
 
+bool SubjectRegistry::accept_seed(const std::string& path, int64_t requested_us) {
+  auto it = map_.find(path);
+  if (it == map_.end()) return false;
+  SubjectEntry& e = *it->second.entry;
+  if (e.stream_rx_us > requested_us || e.seed_req_us > requested_us) return false;
+  e.seed_req_us = requested_us;
+  return true;
+}
+
 int64_t SubjectRegistry::stream_rx_us(const std::string& path) const {
   auto it = map_.find(path);
   return it == map_.end() ? 0 : it->second.entry->stream_rx_us;
@@ -225,6 +234,7 @@ void SubjectRegistry::garbage_collect(
       // Its value goes stale from here; a later layout's REST seed may
       // replace it again.
       slot.entry->stream_rx_us = 0;
+      slot.entry->seed_req_us = 0;
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
     }
