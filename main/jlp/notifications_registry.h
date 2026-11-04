@@ -86,6 +86,13 @@ class NotificationsRegistry {
    *  skipped (see acknowledge()). */
   const Notification* most_severe() const;
 
+  /** As most_severe(), among the states whose bit (1 << state) is set in
+   *  `mask`: the alert overlay shows only the levels the layout shows. */
+  const Notification* most_severe(uint8_t mask) const;
+
+  /** The tracked notification at `path_after_prefix`, or nullptr. */
+  const Notification* find(const std::string& path_after_prefix) const;
+
   /** All currently-tracked notifications, sorted by severity
    *  descending. Includes locally-acknowledged paths (ack only
    *  dismisses the alert overlay; the row stays visible because the

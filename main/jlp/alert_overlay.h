@@ -1,7 +1,9 @@
 #pragma once
 
 #include <stdint.h>
+#include <array>
 #include <string>
+#include <unordered_map>
 
 #include "lvgl.h"
 #include "notifications_registry.h"
@@ -17,16 +19,42 @@ namespace jlp {
  *
  *  Created once at boot, configured by each LayoutManager::apply()
  *  from the layout's optional top-level `notifications` block. */
+/** When a level sounds: never, when the notification's SK `method` asks
+ *  for "sound" (the default), or always. */
+enum class SoundPolicy : uint8_t { Off, Source, Always };
+
+/** What the layout's `notifications.levels.<state>` asks of one state. */
+struct LevelPolicy {
+  bool show = false;                    // the overlay pops for it
+  SoundPolicy sound = SoundPolicy::Off;
+  uint16_t repeat_s = 0;                // chime again until acked; 0 = once
+};
+
+/** Policies for alert, warn, alarm, emergency, in that order. */
+using LevelPolicies = std::array<LevelPolicy, 4>;
+
+/** The policies a layout gets from `min_state` alone: shown and sounding
+ *  (as the source asks) from that state up, nothing below, no repeat. */
+LevelPolicies policies_from_min_state(NotState min_state);
+
 class AlertOverlay {
  public:
   void init();
 
   /** Re-configure from a layout block. Safe to call on every
    *  layout swap. */
-  void configure(bool enabled, NotState min_state);
+  void configure(bool enabled, const LevelPolicies& levels);
+
+  /** Whether `n` is meant to reach the operator here: its level shows or
+   *  would sound. Only such a notification wakes a dimmed panel. */
+  bool wants_attention(const Notification& n) const;
 
  private:
   void rebuild();
+  const LevelPolicy* policy(NotState s) const;
+  bool sounds(const Notification& n) const;
+  void play(const Notification& n);
+  void repeat_tick();
 
   lv_obj_t* root_ = nullptr;      // hidden tile that covers the screen
   lv_obj_t* path_label_ = nullptr;
@@ -39,7 +67,10 @@ class AlertOverlay {
   uint32_t shown_at_ = 0;
 
   bool enabled_ = true;
-  NotState min_state_ = NotState::Alarm;
+  LevelPolicies levels_ = policies_from_min_state(NotState::Alarm);
+  uint8_t show_mask_ = 0;  // bit (1 << state) per shown level
+  // lv_tick of the last chime per path, for repeat_s.
+  std::unordered_map<std::string, uint32_t> last_chime_;
 };
 
 AlertOverlay& alert_overlay();

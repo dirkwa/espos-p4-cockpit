@@ -144,6 +144,10 @@ void NotificationsRegistry::apply(const std::string& path_after_prefix,
 }
 
 const Notification* NotificationsRegistry::most_severe() const {
+  return most_severe(0xFF);
+}
+
+const Notification* NotificationsRegistry::most_severe(uint8_t mask) const {
   const Notification* best = nullptr;
   for (const auto& kv : map_) {
     if (acked_.count(kv.first)) continue;  // locally acknowledged
@@ -151,9 +155,16 @@ const Notification* NotificationsRegistry::most_severe() const {
         kv.second.state == NotState::Normal) {
       continue;  // cleared — kept in the map for list views, not "pending"
     }
+    if (!(mask & (1u << static_cast<unsigned>(kv.second.state)))) continue;
     if (!best || kv.second.state > best->state) best = &kv.second;
   }
   return best;
+}
+
+const Notification* NotificationsRegistry::find(
+    const std::string& path_after_prefix) const {
+  auto it = map_.find(path_after_prefix);
+  return it == map_.end() ? nullptr : &it->second;
 }
 
 std::vector<Notification> NotificationsRegistry::snapshot(
