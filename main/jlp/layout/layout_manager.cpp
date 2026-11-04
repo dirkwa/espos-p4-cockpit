@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "esp_log.h"
+#include "cockpit_hal/ui.h"
 
 #include "../alert_overlay.h"
 #include "../idle_dimmer.h"
@@ -31,6 +32,14 @@ constexpr uint32_t kTabActiveBgHex = 0x58a6ff;
 constexpr uint32_t kTabFgHex = 0xe6edf3;
 constexpr uint32_t kTabActiveFgHex = 0x0d1117;
 
+// A page swipe travels this far, mostly sideways. A swipe up for the
+// overlay strip starts this close to the bottom edge and travels the
+// second distance; the band is a little wider than a finger coming off
+// the bezel needs.
+constexpr int32_t kPageSwipeMin = 40;
+constexpr int32_t kEdgeBand = 24;
+constexpr int32_t kEdgeSwipeMin = 30;
+
 struct ScreenSwitcherCtx {
   std::vector<lv_obj_t*> screens;
   std::vector<lv_obj_t*> tabs;
@@ -38,6 +47,12 @@ struct ScreenSwitcherCtx {
   // across layout edits, so remote selection addresses screens by id.
   std::vector<std::string> ids;
   int active = 0;
+  lv_obj_t* strip = nullptr;
+  // tab_strip "overlay-bottom": the strip floats above the page, hidden
+  // except while it peeks.
+  bool overlay = false;
+  bool peeking = false;
+  uint32_t peek_start = 0;
 };
 
 // One per layout. Lives in heap, freed when the layout's root is
@@ -66,6 +81,14 @@ static void switcher_show(ScreenSwitcherCtx* ctx, int idx) {
   }
 }
 
+// Shows or hides an overlay strip; a fixed strip ignores it.
+static void strip_peek(ScreenSwitcherCtx* ctx, bool on) {
+  if (!ctx->overlay || ctx->strip == nullptr) return;
+  ctx->peeking = on;
+  if (on) ctx->peek_start = lv_tick_get();
+  lv_obj_set_hidden(ctx->strip, !on);
+}
+
 // Builds the screen(s) under `root`. Single screen: widgets parented
 // directly to root. Multi-screen: each screen gets its own container
 // stacked top-to-top, only the active one is visible, and a bottom
@@ -89,6 +112,10 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   // Multi-screen: stack of hidden containers + bottom tab strip.
   const int strip_h = doc["tab_strip_height"] | 56;
   auto* sctx = new ScreenSwitcherCtx();
+  // An unknown mode is drawn fixed: a newer client's value must not
+  // hide the tabs on a device that cannot bring them back.
+  sctx->overlay =
+      strcmp(doc["tab_strip"] | kTabStripFixed, kTabStripOverlayBottom) == 0;
 
   // Free the switcher context when the layout root dies.
   lv_obj_set_user_data(root, sctx);
@@ -105,9 +132,13 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   // display minus the status strip when that is shown. A page sized
   // LV_VER_RES - strip_h overlapped the tabs by the status strip's 28 px and,
   // being above them in z-order, took their taps (half of each tab at the
-  // default 56 px). Hidden pages leave the flex flow.
-  lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_style_pad_row(root, 0, LV_PART_MAIN);
+  // default 56 px). Hidden pages leave the flex flow. An overlay strip
+  // is out of the flow: the pages take all of root and the strip floats
+  // over their bottom.
+  if (!sctx->overlay) {
+    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(root, 0, LV_PART_MAIN);
+  }
 
   lv_obj_t* strip = lv_obj_create(root);
   lv_obj_set_size(strip, lv_pct(100), strip_h);
@@ -120,12 +151,21 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   lv_obj_set_flex_align(strip, LV_FLEX_ALIGN_SPACE_EVENLY,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_scrollable(strip, false);
+  if (sctx->overlay) {
+    lv_obj_align(strip, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_hidden(strip, true);
+  }
+  sctx->strip = strip;
 
   // Per-screen container above the strip, all sharing the same area.
   for (JsonObjectConst s : screens) {
     lv_obj_t* page = lv_obj_create(root);
     lv_obj_set_width(page, lv_pct(100));
-    lv_obj_set_flex_grow(page, 1);
+    if (sctx->overlay) {
+      lv_obj_set_height(page, lv_pct(100));
+    } else {
+      lv_obj_set_flex_grow(page, 1);
+    }
     lv_obj_set_style_bg_opa(page, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(page, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(page, 0, LV_PART_MAIN);
@@ -140,7 +180,9 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
       ++*widget_count;
     }
   }
-  lv_obj_move_to_index(strip, -1);  // last in the column: below the pages
+  // Last child: below the pages in the column, or painted above them
+  // as an overlay.
+  lv_obj_move_to_index(strip, -1);
 
   // Tab buttons (one per screen, flex-row equal widths).
   for (size_t i = 0; i < screens.size(); i++) {
@@ -172,7 +214,10 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
           auto* ctx =
               static_cast<ScreenSwitcherCtx*>(lv_obj_get_user_data(parent_root));
           int idx = (int)(intptr_t)lv_obj_get_user_data(w);
-          if (ctx) switcher_show(ctx, idx);
+          if (ctx) {
+            switcher_show(ctx, idx);
+            strip_peek(ctx, false);  // the choice is made
+          }
         },
         LV_EVENT_CLICKED, nullptr);
 
@@ -318,7 +363,92 @@ bool validate(JsonObjectConst doc, std::string* err) {
 
 }  // namespace
 
-void LayoutManager::init(lv_obj_t* parent) { parent_ = parent; }
+// The press landed on the layout, not on an overlay above it (alert,
+// wake, status strip).
+static bool inside(lv_obj_t* obj, lv_obj_t* root) {
+  for (lv_obj_t* o = obj; o != nullptr; o = lv_obj_get_parent(o)) {
+    if (o == root) return true;
+  }
+  return false;
+}
+
+// A drag on a slider or arc moves it; it must not also turn the page.
+static bool drags(lv_obj_t* obj, lv_obj_t* root) {
+  for (lv_obj_t* o = obj; o != nullptr && o != root; o = lv_obj_get_parent(o)) {
+    if (lv_obj_check_type(o, &lv_slider_class) ||
+        lv_obj_check_type(o, &lv_arc_class)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void LayoutManager::init(lv_obj_t* parent) {
+  parent_ = parent;
+  // Presses are watched on the input device, not on an object: a swipe
+  // may start on any widget of the page.
+  indev_ = lv_indev_get_next(nullptr);
+  if (indev_ != nullptr) {
+    lv_indev_add_event_cb(
+        indev_,
+        [](lv_event_t* e) {
+          static_cast<LayoutManager*>(lv_event_get_user_data(e))->on_press();
+        },
+        LV_EVENT_PRESSED, this);
+  }
+  cockpit_hal::ui::every(250, [this]() {
+    ScreenSwitcherCtx* ctx = switcher_of(current_root_);
+    if (ctx != nullptr && ctx->peeking &&
+        lv_tick_elaps(ctx->peek_start) >= tab_peek_ms_) {
+      strip_peek(ctx, false);
+    }
+  });
+}
+
+void LayoutManager::on_press() {
+  ScreenSwitcherCtx* ctx = switcher_of(current_root_);
+  if (ctx == nullptr || swipe_timer_ != 0) return;
+  if (ctx->peeking) ctx->peek_start = lv_tick_get();  // still choosing
+  lv_indev_get_point(indev_, &press_);
+  lv_obj_t* hit = lv_indev_search_obj(lv_screen_active(), &press_);
+  if (!inside(hit, current_root_) || drags(hit, current_root_)) return;
+  press_at_edge_ = ctx->overlay && !ctx->peeking &&
+                   press_.y >= LV_VER_RES - kEdgeBand;
+  // PRESSING reaches objects only, so the movement is sampled here.
+  swipe_timer_ = cockpit_hal::ui::every(20, [this]() { track_swipe(); });
+}
+
+void LayoutManager::track_swipe() {
+  ScreenSwitcherCtx* ctx = switcher_of(current_root_);
+  // A scrolling list keeps its own drag.
+  bool done = ctx == nullptr ||
+              lv_indev_get_state(indev_) != LV_INDEV_STATE_PRESSED ||
+              lv_indev_get_scroll_obj(indev_) != nullptr;
+  if (!done) {
+    lv_point_t p{};
+    lv_indev_get_point(indev_, &p);
+    const int32_t dx = p.x - press_.x;
+    const int32_t dy = p.y - press_.y;
+    if (LV_ABS(dx) >= kPageSwipeMin && LV_ABS(dx) > 2 * LV_ABS(dy)) {
+      // The widget under the finger gets PRESS_LOST instead of a click.
+      lv_indev_wait_release(indev_);
+      // Left brings the next page, as on a phone, and the last page
+      // wraps to the first.
+      const int n = (int)ctx->screens.size();
+      switcher_show(ctx, (ctx->active + (dx < 0 ? 1 : -1) + n) % n);
+      strip_peek(ctx, true);  // shows where the swipe landed
+      done = true;
+    } else if (press_at_edge_ && -dy >= kEdgeSwipeMin && -dy > LV_ABS(dx)) {
+      lv_indev_wait_release(indev_);
+      strip_peek(ctx, true);
+      done = true;
+    }
+  }
+  if (done) {
+    cockpit_hal::ui::cancel(swipe_timer_);
+    swipe_timer_ = 0;
+  }
+}
 
 ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   ApplyResult r{false, "", "", 0, 0, ""};
