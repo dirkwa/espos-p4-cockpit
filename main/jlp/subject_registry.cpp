@@ -35,8 +35,9 @@ void on_update(const espos_sk_update_t* u, void* arg) {
     cockpit_hal::ui::post([entry, v = std::move(v), rx_us]() {
       lv_subject_t* s = entry->subject;
       // Any delta, null included, is newer than zone_fetch's REST seed and
-      // makes it skip this path. Only a dropped non-finite float does not:
-      // the seed may still be the better reading.
+      // makes it skip this path. Only a dropped value does not (a non-finite
+      // float, or text that is no number on a numeric path): the seed may
+      // still be the better reading.
       const bool is_null = v == "null";
       bool fresh = true;
       switch (entry->kind) {
@@ -44,8 +45,11 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           if (!is_null) {
             // strtof takes "inf", "nan" and 1e999 (+Inf); no observer
             // (bar, arc, zone match, label) is ready for a non-finite value.
-            const float f = strtof(v.c_str(), nullptr);
-            if (std::isfinite(f)) {
+            // A JSON string or other text converts to 0 with no characters
+            // consumed; that is no reading either.
+            char* end = nullptr;
+            const float f = strtof(v.c_str(), &end);
+            if (end != v.c_str() && std::isfinite(f)) {
               lv_subject_set_float(s, f);
             } else {
               fresh = false;
@@ -53,7 +57,15 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           }
           break;
         case SubjectKind::Int:
-          if (!is_null) lv_subject_set_int(s, (int)strtol(v.c_str(), nullptr, 10));
+          if (!is_null) {
+            char* end = nullptr;
+            const long n = strtol(v.c_str(), &end, 10);
+            if (end != v.c_str()) {
+              lv_subject_set_int(s, (int)n);
+            } else {
+              fresh = false;
+            }
+          }
           break;
         case SubjectKind::Bool:
           lv_subject_set_int(s, (v == "true" || v == "1") ? 1 : 0);
