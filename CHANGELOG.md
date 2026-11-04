@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.6.0...v1.6.1) (2026-11-04)
+
+
+### Fixed
+
+* bump espOS to v0.26.1 ([#210](https://github.com/dirkwa/espos-p4-cockpit/issues/210)) ([ccd058b](https://github.com/dirkwa/espos-p4-cockpit/commit/ccd058b81e24663a6b77e3064775284154be39fe))
+* close two cross-task races ([#204](https://github.com/dirkwa/espos-p4-cockpit/issues/204)) ([cfd5843](https://github.com/dirkwa/espos-p4-cockpit/commit/cfd58434b6f3dce35e19aec1610c45b12d3188cd))
+* **jlp:** expire the ack echo guard ([#203](https://github.com/dirkwa/espos-p4-cockpit/issues/203)) ([2c68d0c](https://github.com/dirkwa/espos-p4-cockpit/commit/2c68d0c1812c13026fb561bcfb804c3e8d23abbc))
+* **net:** bound the http handler waits ([#200](https://github.com/dirkwa/espos-p4-cockpit/issues/200)) ([5d89897](https://github.com/dirkwa/espos-p4-cockpit/commit/5d8989773c2a210d0f5de4fe2391f76f4a72023c))
+* **net:** cap api_port so ctrl_port fits ([#201](https://github.com/dirkwa/espos-p4-cockpit/issues/201)) ([0fa5fea](https://github.com/dirkwa/espos-p4-cockpit/commit/0fa5fea850b97b79a9cc798d478108ff8fd6b0b3))
+
 ## [1.6.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.6...v1.6.0) (2026-11-01)
 
 
