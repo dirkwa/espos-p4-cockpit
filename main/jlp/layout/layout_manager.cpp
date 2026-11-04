@@ -100,10 +100,17 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
       },
       LV_EVENT_DELETE, nullptr);
 
-  // Tab strip pinned to the bottom of `root`.
+  // `root` is a column: the visible page fills what the strip leaves, the
+  // strip sits at the bottom. Sized from root's real height, which is the
+  // display minus the status strip when that is shown. A page sized
+  // LV_VER_RES - strip_h overlapped the tabs by the status strip's 28 px and,
+  // being above them in z-order, took their taps (half of each tab at the
+  // default 56 px). Hidden pages leave the flex flow.
+  lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(root, 0, LV_PART_MAIN);
+
   lv_obj_t* strip = lv_obj_create(root);
   lv_obj_set_size(strip, lv_pct(100), strip_h);
-  lv_obj_align(strip, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_obj_set_style_bg_color(strip, lv_color_hex(kStripBgHex), LV_PART_MAIN);
   lv_obj_set_style_border_width(strip, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(strip, 0, LV_PART_MAIN);
@@ -117,12 +124,8 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   // Per-screen container above the strip, all sharing the same area.
   for (JsonObjectConst s : screens) {
     lv_obj_t* page = lv_obj_create(root);
-    lv_obj_set_size(page, lv_pct(100), LV_VER_RES - strip_h);
-    // Note: this is RELATIVE to `root` which is itself sized by the
-    // caller (and offset by the status overlay if enabled). LV_VER_RES
-    // minus strip_h gives a useful default that works when root fills
-    // content_root (the common case).
-    lv_obj_align(page, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_width(page, lv_pct(100));
+    lv_obj_set_flex_grow(page, 1);
     lv_obj_set_style_bg_opa(page, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(page, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(page, 0, LV_PART_MAIN);
@@ -137,6 +140,7 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
       ++*widget_count;
     }
   }
+  lv_obj_move_to_index(strip, -1);  // last in the column: below the pages
 
   // Tab buttons (one per screen, flex-row equal widths).
   for (size_t i = 0; i < screens.size(); i++) {
