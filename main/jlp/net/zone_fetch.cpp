@@ -1,11 +1,14 @@
 #include "zone_fetch.h"
 
 #include <ArduinoJson.h>
+#include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <memory>
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk_http.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -38,6 +41,7 @@ struct MetaResult {
 // here.
 struct ValueResult {
   std::string path;
+  int64_t requested_us = 0;  // esp_timer time the GET started
   bool is_float = false;
   float f = 0.0f;
   int i = 0;
@@ -81,6 +85,7 @@ void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
 // go. Like fetch_meta, this stays off the UI task; the value is extracted
 // here and the result applied in the batch drain.
 void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
+  const int64_t requested_us = esp_timer_get_time();
   char* json = nullptr;
   if (espos_sk_get_value(path.c_str(), &json) != ESP_OK) return;
 
@@ -95,6 +100,7 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
 
   ValueResult r;
   r.path = path;
+  r.requested_us = requested_us;
   // Check bool and int before float: ArduinoJson reports is<float>() true
   // for integers too, so testing float first would route an integer
   // reading through as<float>() and lose precision on large values.
@@ -103,8 +109,11 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
   } else if (v.is<int>()) {
     r.i = v.as<int>();
   } else if (v.is<float>() || v.is<double>()) {
+    // 1e999 parses to +Inf; a non-finite seed would reach every observer.
+    const float f = v.as<float>();
+    if (!std::isfinite(f)) return;
     r.is_float = true;
-    r.f = v.as<float>();
+    r.f = f;
   } else {
     // String / object values aren't seeded — string subjects read
     // description() at build time and the str_buf is owned by the stream
@@ -143,6 +152,11 @@ void fetch_task(void* arg) {
     for (auto& vr : *values) {
       auto kind = registry().kind_of(vr.path);
       if (!kind) continue;  // path not bound by any widget
+      // A stream delta received after this GET started may be newer than
+      // its answer, and Signal K only sends on change; keep it. One from
+      // before the GET is older than the server's current value. Likewise
+      // an overlapping fetch whose GET started later and already applied.
+      if (!registry().accept_seed(vr.path, vr.requested_us)) continue;
       lv_subject_t* sub = registry().lookup(vr.path);
       if (!sub) continue;
       switch (*kind) {
@@ -155,8 +169,14 @@ void fetch_task(void* arg) {
           // Coerce a float reading (SK may report an int path's value
           // as 5.0) so the seed isn't silently dropped — mirrors the
           // int→float coercion the Float case does.
-          if (vr.is_float) lv_subject_set_int(sub, (int)vr.f);
-          else lv_subject_set_int(sub, vr.i);
+          // Clamp first: casting a float beyond int's range is undefined.
+          if (vr.is_float) {
+            const float c = std::fmin(std::fmax(vr.f, (float)INT_MIN),
+                                      (float)INT_MAX);
+            lv_subject_set_int(sub, c >= (float)INT_MAX ? INT_MAX : (int)c);
+          } else {
+            lv_subject_set_int(sub, vr.i);
+          }
           break;
         case SubjectKind::String:
           break;  // seeded from description() at build time
