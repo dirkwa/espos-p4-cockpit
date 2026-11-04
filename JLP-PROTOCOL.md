@@ -276,7 +276,7 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
   - `hold_ms` (int, optional) — when set, the press_value PUT only fires after the button has been held this long; releasing earlier cancels with no PUT. Use as a safety latch for STOP or anchor release.
   - `bg_color`, `fg_color` (string, optional) — fixed colors (see Common widget fields).
 - Renders a centered caption on a tinted tile. Press dims the tile to ~70% opacity for visual feedback; release restores opacity.
-- Touch-off-widget (press lost) cancels any pending hold and emits no release PUT.
+- Press lost (the finger slid off, or a page swipe took the press) cancels any pending hold with no PUT; a press already sent is followed by its  PUT, if the button has one, so the value does not stay pressed.
 - **Local action sentinel** `bind: "@drop_here"` — instead of a PUT, dropping the anchor at the boat's current fix. The panel can't compose a lat/lon from a fixed `press_value`, so on press it fetches `navigation.position` over authenticated SK REST and PUTs `{latitude, longitude}` to `navigation.anchor.position` (the anchor-alarm plugin drops there). `press_value` is ignored; set a `hold_ms` (e.g. 800) as a safety latch. Pairs with the RAISE button (`bind: navigation.anchor.position`, `press_value: null`).
 
 #### `anchor`

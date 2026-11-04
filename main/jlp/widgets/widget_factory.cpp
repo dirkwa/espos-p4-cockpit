@@ -1840,34 +1840,25 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       },
       LV_EVENT_PRESSED, bctx);
 
-  lv_obj_add_event_cb(
-      root,
-      [](lv_event_t* e) {
-        auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
-        lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
-        if (c->hold_timer) {
-          // Released before hold expired: cancel, no PUT.
-          lv_timer_delete(c->hold_timer);
-          c->hold_timer = nullptr;
-          return;
-        }
-        if (c->press_fired) {
-          button_fire(c->path, c->release_json, false);
-        }
-      },
-      LV_EVENT_RELEASED, bctx);
-  // PRESS_LOST handled like RELEASED (touch off the widget).
-  lv_obj_add_event_cb(
-      root,
-      [](lv_event_t* e) {
-        auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
-        lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
-        if (c->hold_timer) {
-          lv_timer_delete(c->hold_timer);
-          c->hold_timer = nullptr;
-        }
-      },
-      LV_EVENT_PRESS_LOST, bctx);
+  // PRESS_LOST ends the press like RELEASED: the finger slid off, or a
+  // page swipe took the press. A press already sent gets its release,
+  // or the value would stay pressed.
+  auto release_cb = [](lv_event_t* e) {
+    auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
+    lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
+    if (c->hold_timer) {
+      // Released before hold expired: cancel, no PUT.
+      lv_timer_delete(c->hold_timer);
+      c->hold_timer = nullptr;
+      return;
+    }
+    if (c->press_fired) {
+      c->press_fired = false;
+      button_fire(c->path, c->release_json, false);
+    }
+  };
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_RELEASED, bctx);
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_PRESS_LOST, bctx);
 
   return root;
 }
