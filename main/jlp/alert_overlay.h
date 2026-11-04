@@ -55,6 +55,7 @@ class AlertOverlay {
   bool sounds(const Notification& n) const;
   void play(const Notification& n);
   void repeat_tick();
+  void sync_mutes();
 
   lv_obj_t* root_ = nullptr;      // hidden tile that covers the screen
   lv_obj_t* path_label_ = nullptr;
@@ -71,6 +72,7 @@ class AlertOverlay {
   uint8_t show_mask_ = 0;  // bit (1 << state) per shown level
   // lv_tick of the last chime per path, for repeat_s.
   std::unordered_map<std::string, uint32_t> last_chime_;
+  uint32_t mutes_seen_ = 0;  // chime().mutes() when last_chime_ was checked
 };
 
 AlertOverlay& alert_overlay();

@@ -212,8 +212,19 @@ bool AlertOverlay::wants_attention(const Notification& n) const {
   return enabled_ && p != nullptr && (p->show || (sounds(n) && !chime().muted()));
 }
 
+// Drops the repeat state when mute was switched on since the last look,
+// even if it is off again by now. Called before a chime is recorded too,
+// so an escalation right after unmuting keeps its repeats.
+void AlertOverlay::sync_mutes() {
+  const uint32_t mutes = chime().mutes();
+  if (mutes == mutes_seen_) return;
+  mutes_seen_ = mutes;
+  last_chime_.clear();
+}
+
 void AlertOverlay::play(const Notification& n) {
   if (chime().muted()) return;
+  sync_mutes();
   chime().play(n.state);
   last_chime_[n.path] = lv_tick_get();
 }
@@ -222,6 +233,7 @@ void AlertOverlay::repeat_tick() {
   if (!enabled_) return;
   // Mute ends the repeats; unmuting does not restart them, the next
   // escalation does.
+  sync_mutes();
   if (chime().muted()) {
     last_chime_.clear();
     return;
