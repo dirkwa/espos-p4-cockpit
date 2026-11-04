@@ -431,7 +431,7 @@ Top-level layout fields:
 | Field                    | Type   | Default       | Notes                                                  |
 |--------------------------|--------|---------------|--------------------------------------------------------|
 | `notifications.enabled`  | bool   | `true`        | Master switch for the overlay.                         |
-| `notifications.min_state`| string | `"alarm"`     | One of `alert` \| `warn` \| `alarm` \| `emergency`. Only notifications at or above this severity trigger the modal. |
+| `notifications.min_state`| string | `"alarm"`     | One of `alert` \| `warn` \| `alarm` \| `emergency`. The default threshold: states at or above it show the modal and chime as the source asks. `levels` overrides it per state. |
 | `notifications.ack_method`| string | `"modal"`    | v1: `"modal"` only. Future versions may add `"toast"` for non-blocking auto-dismiss alerts. |
 | `notifications.levels`   | object | —             | Optional. Per-state overrides, keyed `alert` \| `warn` \| `alarm` \| `emergency`. A state left out keeps what `min_state` implies. |
 
@@ -441,7 +441,7 @@ Each `levels.<state>` entry takes:
 |------------|--------|---------------------------------------|-------|
 | `show`     | bool   | `true` at or above `min_state`        | The modal pops for this state. |
 | `sound`    | string | `"source"` at or above, else `"off"`  | `off`: never chime. `source`: chime when the notification's SK `method` contains `"sound"`. `always`: chime regardless of `method`. |
-| `repeat_s` | int    | `0`                                   | Chime again every so many seconds until the notification is acked, cleared or the panel is muted. `0` plays once. Clamped to 0..3600. |
+| `repeat_s` | int    | `0`                                   | Chime again every so many seconds until the notification is acked, cleared or the panel is muted. Unmuting does not restart them; the next escalation does. `0` plays once. Clamped to 0..3600. |
 
 ```json
 "notifications": {
@@ -454,7 +454,7 @@ Each `levels.<state>` entry takes:
 }
 ```
 
-A designer that writes `levels` also writes `min_state` as the lowest shown state, so firmware without `levels` still shows the same notifications. A dimmed panel wakes only for a state that is shown or would chime; a hidden state that would only chime does not wake a muted panel.
+A designer that writes `levels` also writes `min_state` as the lowest shown state. Firmware without `levels` shows every state from `min_state` up, so a state hidden above a shown one (`warn` shown, `alarm` hidden) still shows there. A dimmed panel wakes only for a state that is shown or would chime; a hidden state that would only chime does not wake a muted panel.
 
 The device subscribes to `notifications.*` and consumes every delta. Notifications in `state: "normal"` / `"nominal"` are treated as cleared and removed from the registry. The most-severe pending notification among the shown states is shown.
 

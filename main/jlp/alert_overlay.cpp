@@ -213,12 +213,19 @@ bool AlertOverlay::wants_attention(const Notification& n) const {
 }
 
 void AlertOverlay::play(const Notification& n) {
+  if (chime().muted()) return;
   chime().play(n.state);
   last_chime_[n.path] = lv_tick_get();
 }
 
 void AlertOverlay::repeat_tick() {
   if (!enabled_) return;
+  // Mute ends the repeats; unmuting does not restart them, the next
+  // escalation does.
+  if (chime().muted()) {
+    last_chime_.clear();
+    return;
+  }
   // Forget paths that are no longer pending (acked, cleared, gone), so a
   // later alarm on the same path starts its own count.
   for (auto it = last_chime_.begin(); it != last_chime_.end();) {

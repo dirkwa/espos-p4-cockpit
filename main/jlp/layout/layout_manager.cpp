@@ -413,8 +413,10 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
     if (snd && !strcmp(snd, "off")) levels[i].sound = SoundPolicy::Off;
     if (snd && !strcmp(snd, "source")) levels[i].sound = SoundPolicy::Source;
     if (snd && !strcmp(snd, "always")) levels[i].sound = SoundPolicy::Always;
-    if (l["repeat_s"].is<int>()) {
-      const int r = l["repeat_s"];
+    if (l["repeat_s"].is<double>()) {
+      // Read as a number, so a value past the int range clamps rather
+      // than leaving the level at one chime.
+      const double r = l["repeat_s"];
       levels[i].repeat_s = static_cast<uint16_t>(r < 0 ? 0 : (r > 3600 ? 3600 : r));
     }
   }
