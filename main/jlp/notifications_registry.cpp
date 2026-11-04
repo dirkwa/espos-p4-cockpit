@@ -18,7 +18,20 @@ namespace {
 // minute of margin still can't confuse a condition that genuinely cleared
 // and later re-occurred with one that never went away.
 constexpr int64_t kReassertWindowUs = 60LL * 1000 * 1000;
+// How long after acknowledge() a clear still counts as the echo of our ACK
+// delta. The echo comes back within about a second; an ACK that never got
+// out (stream down) leaves no echo, and a clear after this window is the
+// condition really going away.
+constexpr int64_t kSelfClearWindowUs = 10LL * 1000 * 1000;
 }  // namespace
+
+bool NotificationsRegistry::take_self_clear(const std::string& path_after_prefix) {
+  auto it = self_cleared_.find(path_after_prefix);
+  if (it == self_cleared_.end()) return false;
+  const bool echo = esp_timer_get_time() - it->second < kSelfClearWindowUs;
+  self_cleared_.erase(it);
+  return echo;
+}
 
 void NotificationsRegistry::apply(const std::string& path_after_prefix,
                                   const JsonVariantConst& value) {
@@ -35,7 +48,7 @@ void NotificationsRegistry::apply(const std::string& path_after_prefix,
     // A cleared path re-arms any local ack: if it fires again it
     // should pop the overlay anew — unless this clear is the echo of
     // our own ACK, which would erase the ack the moment we made it.
-    if (self_cleared_.erase(path_after_prefix) == 0) {
+    if (!take_self_clear(path_after_prefix)) {
       acked_.erase(path_after_prefix);
     }
     if (map_.erase(path_after_prefix) > 0) {
@@ -64,7 +77,7 @@ void NotificationsRegistry::apply(const std::string& path_after_prefix,
   // own filters (severity threshold + the include_cleared param).
   if (n.state == NotState::Nominal || n.state == NotState::Normal) {
     // cleared -> re-arm, unless we caused this clear ourselves.
-    if (self_cleared_.erase(path_after_prefix) == 0) {
+    if (!take_self_clear(path_after_prefix)) {
       acked_.erase(path_after_prefix);
     } else {
       // Our own ack-clear echo. Start the re-assert clock: if the same
@@ -179,6 +192,10 @@ std::vector<Notification> NotificationsRegistry::snapshot(
   return out;
 }
 
+void NotificationsRegistry::forget_self_clear(const std::string& path_after_prefix) {
+  self_cleared_.erase(path_after_prefix);
+}
+
 bool NotificationsRegistry::acknowledge(const std::string& path_after_prefix) {
   auto it = map_.find(path_after_prefix);
   if (it == map_.end()) {
@@ -190,7 +207,7 @@ bool NotificationsRegistry::acknowledge(const std::string& path_after_prefix) {
   if (send_server_ack) {
     // The ACK delta the caller is about to send comes back as a clear;
     // don't let it re-arm the ack we just made (see self_cleared_).
-    self_cleared_.insert(path_after_prefix);
+    self_cleared_[path_after_prefix] = esp_timer_get_time();
   }
   ESP_LOGI(TAG, "acked %s (state=%s%s)", path_after_prefix.c_str(),
            not_state_name(it->second.state),

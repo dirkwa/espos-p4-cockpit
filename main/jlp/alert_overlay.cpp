@@ -130,8 +130,8 @@ void AlertOverlay::init() {
         // re-assert: for a bus-backed alarm our state=normal delta just
         // triggers a clear -> re-raise flap network-wide (see
         // NotificationsRegistry::acknowledge).
-        if (notifications().acknowledge(path)) {
-          put_notification_ack(path);
+        if (notifications().acknowledge(path) && !put_notification_ack(path)) {
+          notifications().forget_self_clear(path);
         }
       },
       LV_EVENT_CLICKED, nullptr);

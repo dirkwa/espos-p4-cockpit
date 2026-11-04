@@ -83,7 +83,7 @@ void put_position(const std::string& path, double latitude, double longitude) {
 // handler interception path consumes incoming deltas on notifications.*
 // and syncs the alarm's state to the delta's `state` field, so an inbound
 // delta with state="normal" achieves the ACK. Sent raw over the stream.
-void put_notification_ack(const std::string& path_after_prefix) {
+bool put_notification_ack(const std::string& path_after_prefix) {
   std::string full = "notifications." + path_after_prefix;
   ESP_LOGI(TAG, "ACK %s (delta state=normal)", full.c_str());
   JsonDocument doc;
@@ -102,6 +102,7 @@ void put_notification_ack(const std::string& path_after_prefix) {
   serializeJson(doc, s);
   esp_err_t err = espos_sk_send_raw(s.c_str());
   if (err != ESP_OK) ESP_LOGW(TAG, "ACK not sent: %s", esp_err_to_name(err));
+  return err == ESP_OK;
 }
 
 }  // namespace jlp

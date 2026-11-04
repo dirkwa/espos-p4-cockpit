@@ -25,7 +25,8 @@ void put_position(const std::string& path, double latitude,
 /** PUT a notification ACK to `notifications.<path_after_prefix>`.
  *  Sends the SK convention `{value: {state: "normal", method: [],
  *  message: ""}}`. Called by the alert overlay when the operator
- *  taps ACK on a pending notification. */
-void put_notification_ack(const std::string& path_after_prefix);
+ *  taps ACK on a pending notification. Returns false when the delta
+ *  could not be sent (stream down, send refused): no echo will come. */
+bool put_notification_ack(const std::string& path_after_prefix);
 
 }  // namespace jlp
