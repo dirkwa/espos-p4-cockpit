@@ -1,7 +1,11 @@
 #include "alert_overlay.h"
 
+#include <iterator>
+
 #include "esp_log.h"
+#include "cockpit_hal/ui.h"
 #include "audio/chime.h"
+#include "audio/voice_control.h"
 #include "net/sk_put.h"
 #include "notifications_registry.h"
 #include "zone_registry.h"  // color_for_state
@@ -152,22 +156,122 @@ void AlertOverlay::init() {
     // bus-backed alarm flaps back to its acked severity after every
     // ack-clear echo, and re-beeping an alarm the operator just
     // silenced is the one thing an ack must reliably prevent.
+    // Whether the escalated level sounds is the layout's choice per level
+    // (notifications.levels): off, as the source's `method` asks, or always.
     if (enabled_ && notifications().last_change_was_escalation() &&
-        notifications().last_escalation_wants_sound() &&
         !notifications().is_acknowledged(notifications().last_changed_path())) {
-      const Notification* n = notifications().most_severe();
-      if (n && n->state >= min_state_) chime().play(n->state);
+      const Notification* n = notifications().find(notifications().last_changed_path());
+      if (n && sounds(*n)) play(*n);
     }
     rebuild();
   });
 
+  // Repeats for levels with repeat_s, until acked, cleared or muted.
+  cockpit_hal::ui::every(1000, [this]() { repeat_tick(); });
+
   ESP_LOGI(TAG, "alert overlay initialised");
 }
 
-void AlertOverlay::configure(bool enabled, NotState min_state) {
+LevelPolicies policies_from_min_state(NotState min_state) {
+  LevelPolicies p{};
+  for (size_t i = 0; i < p.size(); ++i) {
+    const auto s = static_cast<NotState>(static_cast<int>(NotState::Alert) + static_cast<int>(i));
+    p[i].show = s >= min_state;
+    p[i].sound = s >= min_state ? SoundPolicy::Source : SoundPolicy::Off;
+  }
+  return p;
+}
+
+void AlertOverlay::configure(bool enabled, const LevelPolicies& levels) {
   enabled_ = enabled;
-  min_state_ = min_state;
+  levels_ = levels;
+  show_mask_ = 0;
+  for (size_t i = 0; i < levels_.size(); ++i) {
+    if (levels_[i].show) {
+      show_mask_ |= static_cast<uint8_t>(1u << (static_cast<unsigned>(NotState::Alert) + i));
+    }
+  }
   rebuild();
+}
+
+const LevelPolicy* AlertOverlay::policy(NotState s) const {
+  if (s < NotState::Alert) return nullptr;  // nominal / normal never alert
+  return &levels_[static_cast<size_t>(s) - static_cast<size_t>(NotState::Alert)];
+}
+
+bool AlertOverlay::sounds(const Notification& n) const {
+  const LevelPolicy* p = policy(n.state);
+  if (!p) return false;
+  return p->sound == SoundPolicy::Always ||
+         (p->sound == SoundPolicy::Source && n.wants_sound);
+}
+
+// The chime is silent while the panel is muted or the speaker is off.
+static bool silenced() { return chime().muted() || voice().speaker_muted(); }
+
+bool AlertOverlay::wants_attention(const Notification& n) const {
+  const LevelPolicy* p = policy(n.state);
+  // A hidden level that would only chime has nothing to offer a muted
+  // panel: waking it would light an empty screen.
+  return enabled_ && p != nullptr && (p->show || (sounds(n) && !silenced()));
+}
+
+// Drops the repeat state when mute was switched on since the last look,
+// even if it is off again by now. Called before a chime is recorded too,
+// so an escalation right after unmuting keeps its repeats.
+void AlertOverlay::sync_mutes() {
+  // Either counter moving means a mute was switched on since the last look.
+  const uint32_t mutes = chime().mutes() + voice().speaker_mutes();
+  if (mutes == mutes_seen_) return;
+  mutes_seen_ = mutes;
+  last_chime_.clear();
+}
+
+void AlertOverlay::play(const Notification& n) {
+  if (silenced()) return;
+  sync_mutes();
+  chime().play(n.state);
+  last_chime_[n.path] = lv_tick_get();
+}
+
+void AlertOverlay::repeat_tick() {
+  if (!enabled_) return;
+  // Mute ends the repeats; unmuting does not restart them, the next
+  // escalation does.
+  sync_mutes();
+  if (silenced()) {
+    last_chime_.clear();
+    return;
+  }
+  // Forget paths that are no longer pending (acked, cleared, gone), so a
+  // later alarm on the same path starts its own count.
+  for (auto it = last_chime_.begin(); it != last_chime_.end();) {
+    const Notification* n = notifications().find(it->first);
+    const bool pending = n && n->state >= NotState::Alert &&
+                         !notifications().is_acknowledged(it->first);
+    it = pending ? std::next(it) : last_chime_.erase(it);
+  }
+  // One repeat at a time, since clips from several at once would only
+  // queue up: the due one that is most overdue, the most severe on a tie.
+  // Picking by severity alone would let a pending emergency with a short
+  // interval starve every other level's repeat.
+  const Notification* best = nullptr;
+  uint32_t best_overdue = 0;
+  for (const auto& kv : last_chime_) {
+    const Notification* n = notifications().find(kv.first);
+    const LevelPolicy* p = n != nullptr ? policy(n->state) : nullptr;
+    if (p == nullptr || p->repeat_s == 0 || !sounds(*n)) continue;
+    const uint32_t elapsed = lv_tick_elaps(kv.second);
+    const uint32_t interval = p->repeat_s * 1000u;
+    if (elapsed < interval) continue;
+    const uint32_t overdue = elapsed - interval;
+    if (best == nullptr || overdue > best_overdue ||
+        (overdue == best_overdue && n->state > best->state)) {
+      best = n;
+      best_overdue = overdue;
+    }
+  }
+  if (best != nullptr) play(*best);
 }
 
 void AlertOverlay::rebuild() {
@@ -178,8 +282,8 @@ void AlertOverlay::rebuild() {
     current_path_.clear();
     return;
   }
-  const Notification* n = notifications().most_severe();
-  if (!n || n->state < min_state_) {
+  const Notification* n = notifications().most_severe(show_mask_);
+  if (!n) {
     lv_obj_set_hidden(root_, true);
     current_path_.clear();
     return;

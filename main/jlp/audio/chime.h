@@ -47,10 +47,14 @@ class Chime {
   // again on its own.
   void set_muted(bool m);
   bool muted() const { return muted_; }
+  /// Counts the times mute was switched on, so a reader polling muted()
+  /// also sees a mute that was switched off again before it looked.
+  uint32_t mutes() const { return mutes_; }
 
  private:
   espos_audio::AudioDriver* audio_ = nullptr;
   std::atomic_bool muted_{false};
+  std::atomic<uint32_t> mutes_{0};
 };
 
 Chime& chime();
