@@ -406,12 +406,15 @@ void LayoutManager::init(lv_obj_t* parent) {
 }
 
 void LayoutManager::on_press() {
+  lv_indev_get_point(indev_, &press_);
+  lv_obj_t* hit = lv_indev_search_obj(lv_screen_active(), &press_);
+  // Where the press began decides for select_screen(): the widget keeps
+  // the press (PRESS_LOCK) even when the finger moves onto an overlay.
+  press_on_layout_ = inside(hit, current_root_);
   ScreenSwitcherCtx* ctx = switcher_of(current_root_);
   if (ctx == nullptr || swipe_timer_ != 0) return;
   if (ctx->peeking) ctx->peek_start = lv_tick_get();  // still choosing
-  lv_indev_get_point(indev_, &press_);
-  lv_obj_t* hit = lv_indev_search_obj(lv_screen_active(), &press_);
-  if (!inside(hit, current_root_) || drags(hit, current_root_)) return;
+  if (!press_on_layout_ || drags(hit, current_root_)) return;
   press_at_edge_ = ctx->overlay && !ctx->peeking &&
                    press_.y >= LV_VER_RES - kEdgeBand;
   // PRESSING reaches objects only, so the movement is sampled here.
@@ -621,14 +624,9 @@ bool LayoutManager::select_screen(const std::string& id) {
       // a press on an overlay above the layout (alert, wake) is left alone.
       // A swipe that met its threshold has ended its press already.
       cancel_swipe();
-      if ((int)i != ctx->active && indev_ != nullptr &&
+      if ((int)i != ctx->active && press_on_layout_ && indev_ != nullptr &&
           lv_indev_get_state(indev_) == LV_INDEV_STATE_PRESSED) {
-        lv_point_t p{};
-        lv_indev_get_point(indev_, &p);
-        if (inside(lv_indev_search_obj(lv_screen_active(), &p),
-                   current_root_)) {
-          lv_indev_wait_release(indev_);
-        }
+        lv_indev_wait_release(indev_);
       }
       switcher_show(ctx, (int)i);
       strip_peek(ctx, false);  // as a tab tap does

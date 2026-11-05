@@ -88,6 +88,7 @@ class LayoutManager {
   lv_indev_t* indev_ = nullptr;
   lv_point_t press_{};
   bool press_at_edge_ = false;
+  bool press_on_layout_ = false;  // the current press began on the layout
   uint32_t swipe_timer_ = 0;
   uint32_t tab_peek_ms_ = 5000;
   lv_obj_t* current_root_ = nullptr;
