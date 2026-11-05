@@ -614,8 +614,22 @@ bool LayoutManager::select_screen(const std::string& id) {
   if (!ctx) return false;
   for (size_t i = 0; i < ctx->ids.size(); i++) {
     if (ctx->ids[i] == id) {
-      // The remote choice wins over a swipe still being tracked.
+      // The remote choice wins over a swipe still being tracked. When it
+      // changes the page, a press on the layout ends too: the widget gets
+      // PRESS_LOST, not a click, so a toggle on a page no longer shown
+      // cannot send a PUT. A tap on the page that stays keeps its click, and
+      // a press on an overlay above the layout (alert, wake) is left alone.
+      // A swipe that met its threshold has ended its press already.
       cancel_swipe();
+      if ((int)i != ctx->active && indev_ != nullptr &&
+          lv_indev_get_state(indev_) == LV_INDEV_STATE_PRESSED) {
+        lv_point_t p{};
+        lv_indev_get_point(indev_, &p);
+        if (inside(lv_indev_search_obj(lv_screen_active(), &p),
+                   current_root_)) {
+          lv_indev_wait_release(indev_);
+        }
+      }
       switcher_show(ctx, (int)i);
       strip_peek(ctx, false);  // as a tab tap does
       return true;
