@@ -836,6 +836,8 @@ esp_err_t hello_get(httpd_req_t* req) {
   }
   display["idle_timeout"] = true;
   display["idle_dim_pct"] = true;
+  JsonArray tab_strip = display["tab_strip"].to<JsonArray>();
+  for (const char* mode : kTabStripModes) tab_strip.add(mode);
   resp["widgets"] = serialized(kWidgetCatalogJson);
   resp["screenshot"]["formats"] = serialized("[\"jpeg\",\"bmp\"]");
   resp["active_layout_name"] = name;

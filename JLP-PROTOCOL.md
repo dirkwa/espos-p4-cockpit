@@ -32,7 +32,7 @@ Capability descriptor. Always returns 200 with a JSON body:
   "name": "Main helm",
   "hostname": "p4-cockpit",
   "firmware": "p4-cockpit-jlp-1.0.1",
-  "display": { "w": 1024, "h": 600 },
+  "display": { "w": 1024, "h": 600, "tab_strip": ["fixed", "overlay-bottom"] },
   "widgets": {
     "label":  { "fields": ["x","y","w","h","label","bind","display"] },
     "toggle": { "fields": ["x","y","w","h","label","bind"] },
@@ -53,6 +53,7 @@ Field meanings:
 | `hostname`           | Network hostname (matches mDNS).                                        |
 | `firmware`           | Firmware build tag.                                                     |
 | `display.w` / `.h`   | Pixel dimensions of the renderable area.                                |
+| `display.tab_strip`  | The `tab_strip` values the device draws, e.g. `["fixed","overlay-bottom"]`. Absent on older firmware, which draws every layout fixed; a client offers only the listed values. |
 | `widgets`            | Dictionary of supported widget kinds. The `fields` list is the set of JSON keys the device recognises for that kind — clients MUST NOT emit unknown keys for a kind.                                                                              |
 | `active_layout_name` | The `name` of the currently-rendered layout, or `""` if none.           |
 | `layout_source`      | Where the active layout came from: `"littlefs"` \| `"default"` \| `"applicationData"` \| `"post"`. |
@@ -142,6 +143,7 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
   "name": "Main helm",                          // required, free-form
   "status_overlay": true,                       // optional, default true
   "tab_strip_height": 56,                       // optional, default 56
+  "tab_strip": "fixed",                         // optional, default "fixed"
   "screens": [                                  // required, ≥ 1
     {
       "id": "switches",                         // required, unique within layout
@@ -168,8 +170,11 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `name`            | string  | yes      | —       | Display name; returned in `/hello.active_layout_name`. |
 | `status_overlay`  | bool    | no       | `true`  | Whether the device's status strip should be visible. |
 | `tab_strip_height`| int     | no       | `56`    | Pixel height of the multi-screen tab strip. Ignored when there is only one screen. |
+| `tab_strip`       | string  | no       | `"fixed"` | Where the multi-screen tab strip sits. `"fixed"`: below the pages, which share the height with it. `"overlay-bottom"`: the pages take the full height; the strip is hidden and shows above the bottom of the page after a swipe up from the bottom edge or a page swipe, until a tab is tapped or for 5 s. A device draws a value it does not know as `"fixed"`; `/hello.display.tab_strip` lists the values it supports. Ignored when there is only one screen. |
 | `display`         | object  | no       | —       | Backlight power-save. `display.idle_timeout_sec` (uint): seconds of no touch before the backlight dims; `0` or omitted disables the dimmer. `display.idle_dim_pct` (uint 0-100, default 0 = fully off): brightness while idle. While dimmed the device covers the layout with a "TAP TO WAKE" overlay so the first wake-tap can't accidentally hit a widget underneath. **Day/night gating**: the dimmer only engages at night, driven by SignalK `environment.mode` (`"day"`/`"night"`, subscribed automatically) as published by the `signalk-espos-manager` plugin, which computes it offline from `navigation.position` with `@openwaters/almanac` (`day` from sunrise to sunset); `signalk-derived-data`'s Sun calculation publishes the same path and works too. Fail-safe to always-on until SK has delivered a value (so a server without either plugin, or without a position, just leaves the panel bright). Wake sources: any touch, any incoming notification (escalation only), a fresh layout push. All three re-arm the idle timer. Capability advertised by `/hello.display.idle_timeout = true` + `idle_dim_pct = true`. |
 | `screens`         | array   | yes      | —       | At least one screen.                                 |
+
+On a layout with more than one screen, a horizontal swipe on the page shows the next screen (swipe left) or the previous one (swipe right), in tab order; past the last screen it wraps to the first, and back. A swipe that starts on a slider or an arc, or that scrolls a list, stays with that widget, and the widget under the finger gets no click.
 
 ### Screen object
 
@@ -279,7 +284,7 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
   - `hold_ms` (int, optional) — when set, the press_value PUT only fires after the button has been held this long; releasing earlier cancels with no PUT. Use as a safety latch for STOP or anchor release.
   - `bg_color`, `fg_color` (string, optional) — fixed colors (see Common widget fields).
 - Renders a centered caption on a tinted tile. Press dims the tile to ~70% opacity for visual feedback; release restores opacity.
-- Touch-off-widget (press lost) cancels any pending hold and emits no release PUT.
+- Press lost (the finger slid off, or a page swipe took the press) cancels any pending hold with no PUT; a press already sent is followed by its `release_value` PUT, if the button has one, so the value does not stay pressed.
 - **Local action sentinel** `bind: "@drop_here"` — instead of a PUT, dropping the anchor at the boat's current fix. The panel can't compose a lat/lon from a fixed `press_value`, so on press it fetches `navigation.position` over authenticated SK REST and PUTs `{latitude, longitude}` to `navigation.anchor.position` (the anchor-alarm plugin drops there). `press_value` is ignored; set a `hold_ms` (e.g. 800) as a safety latch. Pairs with the RAISE button (`bind: navigation.anchor.position`, `press_value: null`).
 
 #### `anchor`
