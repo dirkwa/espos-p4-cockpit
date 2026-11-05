@@ -418,6 +418,12 @@ void LayoutManager::on_press() {
   swipe_timer_ = cockpit_hal::ui::every(20, [this]() { track_swipe(); });
 }
 
+void LayoutManager::cancel_swipe() {
+  if (swipe_timer_ == 0) return;
+  cockpit_hal::ui::cancel(swipe_timer_);
+  swipe_timer_ = 0;
+}
+
 void LayoutManager::track_swipe() {
   ScreenSwitcherCtx* ctx = switcher_of(current_root_);
   // A scrolling list keeps its own drag.
@@ -444,10 +450,7 @@ void LayoutManager::track_swipe() {
       done = true;
     }
   }
-  if (done) {
-    cockpit_hal::ui::cancel(swipe_timer_);
-    swipe_timer_ = 0;
-  }
+  if (done) cancel_swipe();
 }
 
 ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
@@ -553,10 +556,7 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
 
   // A swipe in progress belongs to the old layout: further movement must
   // not turn a page of the new one.
-  if (swipe_timer_ != 0) {
-    cockpit_hal::ui::cancel(swipe_timer_);
-    swipe_timer_ = 0;
-  }
+  cancel_swipe();
 
   lv_obj_t* old_root = current_root_;
   lv_obj_set_hidden(staging, false);
@@ -614,6 +614,8 @@ bool LayoutManager::select_screen(const std::string& id) {
   if (!ctx) return false;
   for (size_t i = 0; i < ctx->ids.size(); i++) {
     if (ctx->ids[i] == id) {
+      // The remote choice wins over a swipe still being tracked.
+      cancel_swipe();
       switcher_show(ctx, (int)i);
       strip_peek(ctx, false);  // as a tab tap does
       return true;
