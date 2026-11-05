@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "cockpit_hal/ui.h"
 #include "audio/chime.h"
+#include "audio/voice_control.h"
 #include "net/sk_put.h"
 #include "notifications_registry.h"
 #include "zone_registry.h"  // color_for_state
@@ -205,25 +206,29 @@ bool AlertOverlay::sounds(const Notification& n) const {
          (p->sound == SoundPolicy::Source && n.wants_sound);
 }
 
+// The chime is silent while the panel is muted or the speaker is off.
+static bool silenced() { return chime().muted() || voice().speaker_muted(); }
+
 bool AlertOverlay::wants_attention(const Notification& n) const {
   const LevelPolicy* p = policy(n.state);
   // A hidden level that would only chime has nothing to offer a muted
   // panel: waking it would light an empty screen.
-  return enabled_ && p != nullptr && (p->show || (sounds(n) && !chime().muted()));
+  return enabled_ && p != nullptr && (p->show || (sounds(n) && !silenced()));
 }
 
 // Drops the repeat state when mute was switched on since the last look,
 // even if it is off again by now. Called before a chime is recorded too,
 // so an escalation right after unmuting keeps its repeats.
 void AlertOverlay::sync_mutes() {
-  const uint32_t mutes = chime().mutes();
+  // Either counter moving means a mute was switched on since the last look.
+  const uint32_t mutes = chime().mutes() + voice().speaker_mutes();
   if (mutes == mutes_seen_) return;
   mutes_seen_ = mutes;
   last_chime_.clear();
 }
 
 void AlertOverlay::play(const Notification& n) {
-  if (chime().muted()) return;
+  if (silenced()) return;
   sync_mutes();
   chime().play(n.state);
   last_chime_[n.path] = lv_tick_get();
@@ -234,7 +239,7 @@ void AlertOverlay::repeat_tick() {
   // Mute ends the repeats; unmuting does not restart them, the next
   // escalation does.
   sync_mutes();
-  if (chime().muted()) {
+  if (silenced()) {
     last_chime_.clear();
     return;
   }
