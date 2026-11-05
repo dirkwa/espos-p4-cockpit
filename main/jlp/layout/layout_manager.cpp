@@ -551,6 +551,13 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   }
   idle_dimmer().configure(idle_timeout_sec, idle_dim_pct);
 
+  // A swipe in progress belongs to the old layout: further movement must
+  // not turn a page of the new one.
+  if (swipe_timer_ != 0) {
+    cockpit_hal::ui::cancel(swipe_timer_);
+    swipe_timer_ = 0;
+  }
+
   lv_obj_t* old_root = current_root_;
   lv_obj_set_hidden(staging, false);
   current_root_ = staging;
@@ -608,6 +615,7 @@ bool LayoutManager::select_screen(const std::string& id) {
   for (size_t i = 0; i < ctx->ids.size(); i++) {
     if (ctx->ids[i] == id) {
       switcher_show(ctx, (int)i);
+      strip_peek(ctx, false);  // as a tab tap does
       return true;
     }
   }
