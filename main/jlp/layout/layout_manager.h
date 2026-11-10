@@ -8,6 +8,13 @@
 
 namespace jlp {
 
+// tab_strip values this player draws: what the layout parser accepts
+// and what /hello advertises.
+inline constexpr const char* kTabStripFixed = "fixed";
+inline constexpr const char* kTabStripOverlayBottom = "overlay-bottom";
+inline constexpr const char* kTabStripModes[] = {kTabStripFixed,
+                                                 kTabStripOverlayBottom};
+
 enum class ApplySource { Boot, BootStore, BootDefault, PostLayout, BootFetched };
 
 struct ApplyResult {
@@ -71,7 +78,21 @@ class LayoutManager {
   const std::set<std::string>& known_paths() const { return known_paths_; }
 
  private:
+  // Page swipes on every multi-screen layout, and the swipe up that
+  // shows an overlay tab strip.
+  void on_press();
+  void track_swipe();
+  void cancel_swipe();
+  void end_press();
+
   lv_obj_t* parent_ = nullptr;
+  lv_indev_t* indev_ = nullptr;
+  lv_point_t press_{};
+  bool press_at_edge_ = false;
+  bool press_on_layout_ = false;  // the current press began on the layout
+  lv_obj_t* pressed_ = nullptr;   // what LVGL holds as pressed; may be gone
+  uint32_t swipe_timer_ = 0;
+  uint32_t tab_peek_ms_ = 5000;
   lv_obj_t* current_root_ = nullptr;
   std::string active_name_;
   ApplySource active_source_ = ApplySource::Boot;
