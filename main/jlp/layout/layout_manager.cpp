@@ -411,6 +411,8 @@ void LayoutManager::on_press() {
   // Where the press began decides for select_screen(): the widget keeps
   // the press (PRESS_LOCK) even when the finger moves onto an overlay.
   press_on_layout_ = inside(hit, current_root_);
+  // Called from the PRESSED event, while LVGL has the pressed object set.
+  pressed_ = lv_indev_get_active_obj();
   ScreenSwitcherCtx* ctx = switcher_of(current_root_);
   if (ctx == nullptr || swipe_timer_ != 0) return;
   if (ctx->peeking) ctx->peek_start = lv_tick_get();  // still choosing
@@ -427,6 +429,25 @@ void LayoutManager::cancel_swipe() {
   swipe_timer_ = 0;
 }
 
+// Ends the current press now. lv_indev_wait_release alone sends the widget
+// PRESS_LOST only when the finger lifts, so a button that has sent its
+// press value would hold it while its page is already gone. The widget the
+// press began on gets PRESS_LOST at once instead, before a page change
+// hides it; on the release LVGL sends a second one, which a button that has
+// already released ignores. It is the object LVGL holds as pressed, captured
+// in on_press, since a press-locked widget keeps the press wherever the
+// finger moves; lv_obj_is_valid covers one a layout swap has deleted. A
+// slider or an arc is left to LVGL: their handlers expect a live input
+// device.
+void LayoutManager::end_press() {
+  lv_obj_t* obj = pressed_;
+  if (obj != nullptr && lv_obj_is_valid(obj) && inside(obj, current_root_) &&
+      !drags(obj, current_root_)) {
+    lv_obj_send_event(obj, LV_EVENT_PRESS_LOST, indev_);
+  }
+  lv_indev_wait_release(indev_);
+}
+
 void LayoutManager::track_swipe() {
   ScreenSwitcherCtx* ctx = switcher_of(current_root_);
   // A scrolling list keeps its own drag.
@@ -440,7 +461,7 @@ void LayoutManager::track_swipe() {
     const int32_t dy = p.y - press_.y;
     if (LV_ABS(dx) >= kPageSwipeMin && LV_ABS(dx) > 2 * LV_ABS(dy)) {
       // The widget under the finger gets PRESS_LOST instead of a click.
-      lv_indev_wait_release(indev_);
+      end_press();
       // Left brings the next page, as on a phone, and the last page
       // wraps to the first.
       const int n = (int)ctx->screens.size();
@@ -448,7 +469,7 @@ void LayoutManager::track_swipe() {
       strip_peek(ctx, true);  // shows where the swipe landed
       done = true;
     } else if (press_at_edge_ && -dy >= kEdgeSwipeMin && -dy > LV_ABS(dx)) {
-      lv_indev_wait_release(indev_);
+      end_press();
       strip_peek(ctx, true);
       done = true;
     }
@@ -626,7 +647,7 @@ bool LayoutManager::select_screen(const std::string& id) {
       cancel_swipe();
       if ((int)i != ctx->active && press_on_layout_ && indev_ != nullptr &&
           lv_indev_get_state(indev_) == LV_INDEV_STATE_PRESSED) {
-        lv_indev_wait_release(indev_);
+        end_press();
       }
       switcher_show(ctx, (int)i);
       strip_peek(ctx, false);  // as a tab tap does

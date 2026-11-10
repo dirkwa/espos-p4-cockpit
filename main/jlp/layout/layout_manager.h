@@ -83,12 +83,14 @@ class LayoutManager {
   void on_press();
   void track_swipe();
   void cancel_swipe();
+  void end_press();
 
   lv_obj_t* parent_ = nullptr;
   lv_indev_t* indev_ = nullptr;
   lv_point_t press_{};
   bool press_at_edge_ = false;
   bool press_on_layout_ = false;  // the current press began on the layout
+  lv_obj_t* pressed_ = nullptr;   // what LVGL holds as pressed; may be gone
   uint32_t swipe_timer_ = 0;
   uint32_t tab_peek_ms_ = 5000;
   lv_obj_t* current_root_ = nullptr;
