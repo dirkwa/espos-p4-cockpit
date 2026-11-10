@@ -1,6 +1,8 @@
 #include "subject_registry.h"
 
 #include <ArduinoJson.h>
+#include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -58,10 +60,14 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           break;
         case SubjectKind::Int:
           if (!is_null) {
+            // Read as a JSON number, not just its leading integer digits:
+            // 1e3 is 1000 and 1e-5 is 0, as the REST seed converts them. A
+            // fraction is cut toward zero.
             char* end = nullptr;
-            const long n = strtol(v.c_str(), &end, 10);
-            if (end != v.c_str()) {
-              lv_subject_set_int(s, (int)n);
+            const double n = strtod(v.c_str(), &end);
+            if (end != v.c_str() && std::isfinite(n)) {
+              lv_subject_set_int(
+                  s, (int)std::clamp(n, (double)INT_MIN, (double)INT_MAX));
             } else {
               fresh = false;
             }
