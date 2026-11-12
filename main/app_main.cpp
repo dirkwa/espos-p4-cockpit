@@ -297,8 +297,13 @@ esp_err_t panel_up(void*) {
     jlp::mic_overlay().init();    // after alert_overlay: an alarm wins
     jlp::wake_overlay().init();   // after alert_overlay: z-order
     jlp::idle_dimmer().init();
+    // Wake for an escalation the layout wants the operator to notice: a
+    // level that is shown or sounds. Hidden, silent levels leave it dark.
     (void)jlp::notifications().on_change([]() {
-      if (jlp::notifications().last_change_was_escalation()) jlp::idle_dimmer().wake();
+      if (!jlp::notifications().last_change_was_escalation()) return;
+      const jlp::Notification* n =
+          jlp::notifications().find(jlp::notifications().last_changed_path());
+      if (n && jlp::alert_overlay().wants_attention(*n)) jlp::idle_dimmer().wake();
     });
     cockpit_hal::ui::every(1000, poll_status_line);
   });

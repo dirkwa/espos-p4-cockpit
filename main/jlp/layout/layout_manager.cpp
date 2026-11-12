@@ -396,6 +396,9 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
 
   // Re-configure the alert overlay from the layout's top-level
   // `notifications` block. Defaults: enabled + min_state alarm.
+  // `levels` (optional) overrides, per state, what min_state implies:
+  // show, sound (off / source / always) and repeat_s. A state it leaves
+  // out keeps the min_state default, so an older layout behaves as before.
   bool notif_enabled = true;
   NotState notif_min = NotState::Alarm;
   JsonObjectConst notif = doc["notifications"];
@@ -403,7 +406,25 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
     if (notif["enabled"].is<bool>()) notif_enabled = notif["enabled"];
     notif_min = parse_not_state(notif["min_state"] | "alarm");
   }
-  alert_overlay().configure(notif_enabled, notif_min);
+  LevelPolicies levels = policies_from_min_state(notif_min);
+  JsonObjectConst lv = notif["levels"];
+  static constexpr const char* kLevelNames[] = {"alert", "warn", "alarm", "emergency"};
+  for (size_t i = 0; i < levels.size() && !lv.isNull(); ++i) {
+    JsonObjectConst l = lv[kLevelNames[i]];
+    if (l.isNull()) continue;
+    if (l["show"].is<bool>()) levels[i].show = l["show"];
+    const char* snd = l["sound"] | (const char*)nullptr;
+    if (snd && !strcmp(snd, "off")) levels[i].sound = SoundPolicy::Off;
+    if (snd && !strcmp(snd, "source")) levels[i].sound = SoundPolicy::Source;
+    if (snd && !strcmp(snd, "always")) levels[i].sound = SoundPolicy::Always;
+    if (l["repeat_s"].is<double>()) {
+      // Read as a number, so a value past the int range clamps rather
+      // than leaving the level at one chime.
+      const double r = l["repeat_s"];
+      levels[i].repeat_s = static_cast<uint16_t>(r < 0 ? 0 : (r > 3600 ? 3600 : r));
+    }
+  }
+  alert_overlay().configure(notif_enabled, levels);
 
   // Apply the backlight idle timeout (0 = disabled) and the dim-while-
   // idle brightness. Default dim_pct=0 (fully off); the wake overlay
