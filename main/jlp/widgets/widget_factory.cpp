@@ -2720,9 +2720,15 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   const AnchorTrackCtx* prev = nullptr;
   if (!a->id.empty()) {
     auto it = live_tracks().find(a->id);
-    if (it != live_tracks().end() && !it->second.empty()) {
-      const AnchorTrackCtx* p = it->second.front();
-      if (p->cx == a->cx && p->cy == a->cy && p->plot_r == a->plot_r) prev = p;
+    // Ids are unique per screen only, so several may share one.
+    if (it != live_tracks().end()) {
+      for (const AnchorTrackCtx* other : it->second) {
+        if (other->cx == a->cx && other->cy == a->cy &&
+            other->plot_r == a->plot_r) {
+          prev = other;
+          break;
+        }
+      }
     }
   }
   lv_point_precise_t kept_pts[kTrackMax];
