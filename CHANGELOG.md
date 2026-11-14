@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.6.0...v1.7.0) (2026-11-14)
+
+
+### Added
+
+* **jlp:** set show, sound and repeat per level ([#208](https://github.com/dirkwa/espos-p4-cockpit/issues/208)) ([0ff98ba](https://github.com/dirkwa/espos-p4-cockpit/commit/0ff98ba7b5093407d86d18d8597a24464c73f246))
+* **settings:** brightness, theme and screen off menu ([#216](https://github.com/dirkwa/espos-p4-cockpit/issues/216)) ([c3f9c63](https://github.com/dirkwa/espos-p4-cockpit/commit/c3f9c63072a76f270c36f9e400ad7578c785c520))
+* **theme:** day, dark and night panel themes ([#215](https://github.com/dirkwa/espos-p4-cockpit/issues/215)) ([b79c646](https://github.com/dirkwa/espos-p4-cockpit/commit/b79c646edf6979159d75d543a271c3391387015b))
+
+
+### Fixed
+
+* bump espOS to v0.26.1 ([#210](https://github.com/dirkwa/espos-p4-cockpit/issues/210)) ([ccd058b](https://github.com/dirkwa/espos-p4-cockpit/commit/ccd058b81e24663a6b77e3064775284154be39fe))
+* bump espOS to v0.29.0 ([#214](https://github.com/dirkwa/espos-p4-cockpit/issues/214)) ([375606c](https://github.com/dirkwa/espos-p4-cockpit/commit/375606c2c4451d55282de377e160c21553fbe995))
+* close two cross-task races ([#204](https://github.com/dirkwa/espos-p4-cockpit/issues/204)) ([cfd5843](https://github.com/dirkwa/espos-p4-cockpit/commit/cfd58434b6f3dce35e19aec1610c45b12d3188cd))
+* **jlp:** expire the ack echo guard ([#203](https://github.com/dirkwa/espos-p4-cockpit/issues/203)) ([2c68d0c](https://github.com/dirkwa/espos-p4-cockpit/commit/2c68d0c1812c13026fb561bcfb804c3e8d23abbc))
+* **layout:** keep the pages off the tab strip ([#205](https://github.com/dirkwa/espos-p4-cockpit/issues/205)) ([55813d2](https://github.com/dirkwa/espos-p4-cockpit/commit/55813d2b5de5c55f9a3665a5be46b900d2345dc9))
+* **net:** bound the http handler waits ([#200](https://github.com/dirkwa/espos-p4-cockpit/issues/200)) ([5d89897](https://github.com/dirkwa/espos-p4-cockpit/commit/5d8989773c2a210d0f5de4fe2391f76f4a72023c))
+* **net:** cap api_port so ctrl_port fits ([#201](https://github.com/dirkwa/espos-p4-cockpit/issues/201)) ([0fa5fea](https://github.com/dirkwa/espos-p4-cockpit/commit/0fa5fea850b97b79a9cc798d478108ff8fd6b0b3))
+
 ## [1.6.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.5.6...v1.6.0) (2026-11-01)
 
 
