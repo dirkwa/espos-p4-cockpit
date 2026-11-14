@@ -6,6 +6,8 @@
 #include <set>
 #include <string>
 
+#include "../theme.h"
+
 namespace jlp {
 
 class SubjectRegistry;
@@ -34,19 +36,21 @@ bool parse_hex_color(const char* s, uint32_t* out);
 // layout on screen -- its still-live widgets would then read the rejected
 // layout's theme on their next update.
 struct ThemeColors {
-  uint32_t fg;
-  uint32_t accent;
+  bool fg_set = false;
+  uint32_t fg = 0;
+  bool accent_set = false;
+  uint32_t accent = 0;
+  theme::Mode mode = theme::Mode::Auto;
+  theme::Mode day_base = theme::Mode::Day;
 };
 ThemeColors current_theme();
 void restore_theme(const ThemeColors& t);
 
-// Set the default fg/accent colors used by bars, arcs, buttons and
-// other widgets when no SK zone matches and no per-widget bg_color/
-// fg_color override applies. Pass the layout's top-level `theme`
-// object; a null object (or one missing a field) resets that field to
-// the firmware default rather than carrying over the previous
-// layout's theme. Call before building widgets so the new colors take
-// effect immediately.
+// Take the layout's top-level `theme`: `mode` (auto/day/dark/night),
+// `day_base` (what auto shows by day) and the fg/accent overrides. A null
+// object (or one missing a field) resets that field to the default rather
+// than carrying over the previous layout's. Re-initialises LVGL's default
+// theme, so call it before building widgets.
 void apply_theme(JsonObjectConst theme);
 
 // Tell any "stream" widgets that are direct children of `container` whether

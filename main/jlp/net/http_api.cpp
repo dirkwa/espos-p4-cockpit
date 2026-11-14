@@ -25,6 +25,7 @@
 #include "espos_voice/wyoming_satellite.h"
 
 #include "../layout/layout_manager.h"
+#include "../theme.h"
 #include "../layout/store.h"
 #include "../audio/chime.h"
 #include "../audio/voice_control.h"
@@ -836,6 +837,10 @@ esp_err_t hello_get(httpd_req_t* req) {
   }
   display["idle_timeout"] = true;
   display["idle_dim_pct"] = true;
+  // Theme modes `theme.mode` accepts, and the one on screen now.
+  JsonArray themes = display["themes"].to<JsonArray>();
+  for (const char* t : {"auto", "day", "dark", "night"}) themes.add(t);
+  display["theme"] = theme::mode_name(layout_manager().built_mode());
   resp["widgets"] = serialized(kWidgetCatalogJson);
   resp["screenshot"]["formats"] = serialized("[\"jpeg\",\"bmp\"]");
   resp["active_layout_name"] = name;

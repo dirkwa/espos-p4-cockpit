@@ -1,10 +1,13 @@
 #pragma once
 
 #include "lvgl.h"
+#include <atomic>
 #include <functional>
 #include <set>
 #include <string>
 #include <vector>
+
+#include "../theme.h"
 
 namespace jlp {
 
@@ -44,6 +47,14 @@ class LayoutManager {
   // layout. On failure, the current layout stays up.
   ApplyResult apply(const std::string& json, ApplySource src);
 
+  // Rebuild the active layout if the theme to show changed (sunrise or
+  // sunset, a choice on the panel). Goes through the same staging swap as
+  // a push, so the helm never blanks. UI TASK ONLY.
+  void refresh_theme();
+
+  // Theme the active layout was built in. Safe from any task.
+  theme::Mode built_mode() const { return built_mode_.load(); }
+
   const std::string& active_name() const { return active_name_; }
   ApplySource active_source() const { return active_source_; }
 
@@ -71,7 +82,15 @@ class LayoutManager {
   const std::set<std::string>& known_paths() const { return known_paths_; }
 
  private:
+  ApplyResult apply_impl(const std::string& json, ApplySource src,
+                         bool theme_rebuild);
+  void restyle_overlays();
+
   lv_obj_t* parent_ = nullptr;
+  // The applied layout's JSON, kept to rebuild it in another theme.
+  std::string active_json_;
+  // Written on the UI task, read by /hello on the HTTP task.
+  std::atomic<theme::Mode> built_mode_{theme::Mode::Day};
   lv_obj_t* current_root_ = nullptr;
   std::string active_name_;
   ApplySource active_source_ = ApplySource::Boot;

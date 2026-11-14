@@ -8,7 +8,7 @@
 #include "audio/voice_control.h"
 #include "net/sk_put.h"
 #include "notifications_registry.h"
-#include "zone_registry.h"  // color_for_state
+#include "theme.h"
 
 static const char* TAG = "jlp.alert";
 
@@ -17,17 +17,16 @@ namespace jlp {
 namespace {
 
 uint32_t color_for_not_state(NotState s) {
-  // Reuse the maritime palette from ZoneState. The mapping is
-  // direct since NotState and ZoneState use the same names.
+  // Same escalation as the zones, from the active theme.
   switch (s) {
     case NotState::Nominal:
-    case NotState::Normal:    return 0x3fb950;  // green (shouldn't show)
-    case NotState::Alert:     return 0xd29922;  // yellow
-    case NotState::Warn:      return 0xdb6d28;  // orange
-    case NotState::Alarm:     return 0xf85149;  // red
-    case NotState::Emergency: return 0xa371f7;  // purple
+    case NotState::Normal:    return theme::state_color(0);  // shouldn't show
+    case NotState::Alert:     return theme::state_color(1);
+    case NotState::Warn:      return theme::state_color(2);
+    case NotState::Alarm:     return theme::state_color(3);
+    case NotState::Emergency: return theme::state_color(4);
   }
-  return 0xf85149;
+  return theme::state_color(3);
 }
 
 }  // namespace
@@ -54,7 +53,6 @@ void AlertOverlay::init() {
   // ACK button's own area, so a stray tap can't reach a widget beneath it.
   lv_obj_set_size(root_, LV_HOR_RES, LV_VER_RES / 2);
   lv_obj_align(root_, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  lv_obj_set_style_bg_color(root_, lv_color_hex(0x0d1117), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root_, LV_OPA_90, LV_PART_MAIN);
   lv_obj_set_style_border_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
@@ -66,24 +64,18 @@ void AlertOverlay::init() {
   lv_obj_move_foreground(root_);
 
   state_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(state_label_, lv_color_hex(0xf85149),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(state_label_, &lv_font_montserrat_28,
                              LV_PART_MAIN);
   lv_label_set_text(state_label_, "ALARM");
   lv_obj_align(state_label_, LV_ALIGN_TOP_MID, 0, 0);
 
   path_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(path_label_, lv_color_hex(0x8b949e),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(path_label_, &lv_font_montserrat_14,
                              LV_PART_MAIN);
   lv_label_set_text(path_label_, "");
   lv_obj_align_to(path_label_, state_label_, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
 
   msg_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(msg_label_, lv_color_hex(0xe6edf3),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(msg_label_, &lv_font_montserrat_20,
                              LV_PART_MAIN);
   lv_label_set_text(msg_label_, "");
@@ -101,10 +93,9 @@ void AlertOverlay::init() {
   ack_button_ = lv_button_create(root_);
   lv_obj_set_size(ack_button_, 220, 80);
   lv_obj_align(ack_button_, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_bg_color(ack_button_, lv_color_hex(0x3fb950), LV_PART_MAIN);
   lv_obj_set_style_radius(ack_button_, 8, LV_PART_MAIN);
-  lv_obj_t* ack_lbl = lv_label_create(ack_button_);
-  lv_obj_set_style_text_color(ack_lbl, lv_color_hex(0x0d1117), LV_PART_MAIN);
+  ack_lbl_ = lv_label_create(ack_button_);
+  lv_obj_t* ack_lbl = ack_lbl_;
   lv_obj_set_style_text_font(ack_lbl, &lv_font_montserrat_28, LV_PART_MAIN);
   lv_label_set_text(ack_lbl, "ACK");
   lv_obj_center(ack_lbl);
@@ -165,6 +156,8 @@ void AlertOverlay::init() {
     }
     rebuild();
   });
+
+  restyle();
 
   // Repeats for levels with repeat_s, until acked, cleared or muted.
   cockpit_hal::ui::every(1000, [this]() { repeat_tick(); });
@@ -303,6 +296,20 @@ void AlertOverlay::rebuild() {
   lv_label_set_text(msg_label_, n->message.empty() ? "(no message)"
                                                    : n->message.c_str());
   lv_obj_set_hidden(root_, false);
+}
+
+void AlertOverlay::restyle() {
+  if (!root_) return;
+  const theme::Palette& p = theme::palette();
+  lv_obj_set_style_bg_color(root_, lv_color_hex(p.screen), LV_PART_MAIN);
+  lv_obj_set_style_text_color(state_label_,
+                              lv_color_hex(theme::state_color(3)), LV_PART_MAIN);
+  lv_obj_set_style_text_color(path_label_, lv_color_hex(p.muted), LV_PART_MAIN);
+  lv_obj_set_style_text_color(msg_label_, lv_color_hex(p.fg), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(ack_button_, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_set_style_text_color(ack_lbl_, lv_color_hex(p.on_accent),
+                              LV_PART_MAIN);
+  if (!lv_obj_is_hidden(root_)) rebuild();
 }
 
 AlertOverlay& alert_overlay() {

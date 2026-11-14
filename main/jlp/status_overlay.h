@@ -13,6 +13,9 @@ class StatusOverlay {
  public:
   void init();
 
+  // Re-color from the active theme; init() and every theme change.
+  void restyle();
+
   // Setters; safe to call from the UI task.
   void set_hostname(const char* hostname);
   void set_wifi(const char* line);                   // "MOIN -58dBm" or "down"
