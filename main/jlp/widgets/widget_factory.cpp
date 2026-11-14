@@ -1872,6 +1872,7 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   uint32_t hold_ms = spec["hold_ms"] | 0;
 
   lv_obj_t* root = lv_obj_create(ctx.parent);
+  mark_touch_control(root);
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 0, LV_PART_MAIN);
@@ -2883,6 +2884,7 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   const char* caption = spec["label"] | "TALK";
 
   lv_obj_t* root = lv_obj_create(ctx.parent);
+  mark_touch_control(root);
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 0, LV_PART_MAIN);

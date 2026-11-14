@@ -24,6 +24,17 @@ struct BuildCtx {
 // previous screen).
 lv_obj_t* build_widget(BuildCtx& ctx, JsonObjectConst spec, std::string* err);
 
+// Widget roots that are plain objects but act on touch (button, voice)
+// carry LV_STATE_USER_1, so panel-wide gestures such as the settings hold
+// leave them alone. No style targets that state. Controls built from LVGL's
+// own classes (switch, slider) are recognised by their class.
+inline void mark_touch_control(lv_obj_t* obj) {
+  lv_obj_set_state_user_1(obj, true);
+}
+inline bool is_touch_control(const lv_obj_t* obj) {
+  return lv_obj_is_state_user_1(obj);
+}
+
 // Parse "#rrggbb" or "#rgb" into a 24-bit hex color. Returns true on
 // success; on failure (missing field, malformed) leaves *out untouched.
 // Exported so layout_manager can reuse it for the screen background,

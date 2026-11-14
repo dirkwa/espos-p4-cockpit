@@ -13,6 +13,7 @@
 #include "idle_dimmer.h"
 #include "theme.h"
 #include "wake_overlay.h"
+#include "widgets/widget_factory.h"
 
 static const char* TAG = "jlp.settings";
 
@@ -76,7 +77,8 @@ lv_obj_t* caption(lv_obj_t* parent, const char* text) {
 // tiles, labels and the background.
 bool is_control(lv_obj_t* obj) {
   for (lv_obj_t* o = obj; o; o = lv_obj_get_parent(o)) {
-    if (lv_obj_check_type(o, &lv_button_class) ||
+    if (is_touch_control(o) ||
+        lv_obj_check_type(o, &lv_button_class) ||
         lv_obj_check_type(o, &lv_slider_class) ||
         lv_obj_check_type(o, &lv_switch_class) ||
         lv_obj_check_type(o, &lv_image_class)) {

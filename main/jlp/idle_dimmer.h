@@ -33,11 +33,6 @@ class IdleDimmer {
   // or an alarm turns it back on.
   void sleep_now();
 
- private:
-  void end_manual_off();
-
- public:
-
   // The brightness used while awake. Follows the `cockpit.brightness`
   // setting: without this the dimmer would restore its own hardcoded
   // default on the next wake and undo a brightness the user just set.
@@ -61,8 +56,6 @@ class IdleDimmer {
   uint8_t dim_pct_ = 0;
   bool on_ = true;
   bool manual_off_ = false;  // sleep_now() holds it off until a tap
-  uint32_t manual_off_tick_ = 0;
-  uint32_t manual_poll_ = 0;  // ui::every handle while manual_off_
 };
 
 IdleDimmer& idle_dimmer();
