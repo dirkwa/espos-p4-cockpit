@@ -10,7 +10,8 @@ namespace jlp {
  *  ("day" / "night"), as published by signalk-espos-manager from the
  *  Sun's altitude (@openwaters/almanac): day from sunrise to sunset.
  *  signalk-derived-data publishes the same path and is accepted too.
- *  Used by the idle dimmer so the panel only goes dark at night.
+ *  Used by the idle dimmer so the panel only goes dark at night, and by
+ *  the panel theme, whose auto mode switches to night red at sunset.
  *
  *  Fail-safe behaviour: until SK has delivered a value, classify as
  *  Day so the helm stays bright. Dimming while the operator needs the

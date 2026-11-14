@@ -1,5 +1,7 @@
 #include "zone_registry.h"
 
+#include "theme.h"
+
 #include "esp_log.h"
 #include "lvgl.h"
 
@@ -25,19 +27,19 @@ ZoneState parse_state(const char* s) {
 }  // namespace
 
 uint32_t color_for_state(ZoneState s) {
-  // Maritime-helm escalation palette: green safe → yellow notice → orange
-  // act-soon → red act-now → purple critical/system-down. Bumps every SK
-  // state one severity step warmer than the SK spec defaults so a glance
-  // at the helm reads like a traffic light.
+  // Maritime-helm escalation: green safe, yellow notice, orange act soon,
+  // red act now, purple critical. Every SK state sits one step warmer than
+  // the SK spec defaults so a glance at the helm reads like a traffic
+  // light. The shades come from the active theme (red ramp at night).
   switch (s) {
     case ZoneState::Nominal:
-    case ZoneState::Normal:    return 0x3fb950;  // green
-    case ZoneState::Alert:     return 0xd29922;  // yellow
-    case ZoneState::Warn:      return 0xdb6d28;  // orange
-    case ZoneState::Alarm:     return 0xf85149;  // red
-    case ZoneState::Emergency: return 0xa371f7;  // purple
+    case ZoneState::Normal:    return theme::state_color(0);
+    case ZoneState::Alert:     return theme::state_color(1);
+    case ZoneState::Warn:      return theme::state_color(2);
+    case ZoneState::Alarm:     return theme::state_color(3);
+    case ZoneState::Emergency: return theme::state_color(4);
   }
-  return 0xd29922;
+  return theme::state_color(1);
 }
 
 const Zone* ZoneRegistry::match(const std::string& path,

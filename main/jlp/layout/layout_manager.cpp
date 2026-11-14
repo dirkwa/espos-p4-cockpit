@@ -5,13 +5,17 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include "cockpit_hal/ui.h"
 #include "esp_log.h"
 
 #include "../alert_overlay.h"
 #include "../idle_dimmer.h"
+#include "../mic_overlay.h"
 #include "../notifications_registry.h"
 #include "../status_overlay.h"
 #include "../subject_registry.h"
+#include "../theme.h"
+#include "../wake_overlay.h"
 #include "../widgets/widget_factory.h"
 #include "store.h"
 
@@ -24,12 +28,6 @@ namespace {
 constexpr int kSchemaVersion = 1;
 constexpr size_t kMaxJsonBytes = 64 * 1024;
 
-// Per-screen container + tab button colors.
-constexpr uint32_t kStripBgHex = 0x161b22;
-constexpr uint32_t kTabBgHex = 0x21262d;
-constexpr uint32_t kTabActiveBgHex = 0x58a6ff;
-constexpr uint32_t kTabFgHex = 0xe6edf3;
-constexpr uint32_t kTabActiveFgHex = 0x0d1117;
 
 struct ScreenSwitcherCtx {
   std::vector<lv_obj_t*> screens;
@@ -49,13 +47,13 @@ static void switcher_show(ScreenSwitcherCtx* ctx, int idx) {
   }
   for (size_t i = 0; i < ctx->tabs.size(); i++) {
     bool a = (int)i == idx;
-    lv_obj_set_style_bg_color(
-        ctx->tabs[i], lv_color_hex(a ? kTabActiveBgHex : kTabBgHex),
-        LV_PART_MAIN);
+    const theme::Palette& p = theme::palette();
+    lv_obj_set_style_bg_color(ctx->tabs[i], lv_color_hex(a ? p.accent : p.tab),
+                              LV_PART_MAIN);
     lv_obj_t* lbl = lv_obj_get_child(ctx->tabs[i], 0);
     if (lbl) {
       lv_obj_set_style_text_color(
-          lbl, lv_color_hex(a ? kTabActiveFgHex : kTabFgHex), LV_PART_MAIN);
+          lbl, lv_color_hex(a ? p.on_accent : p.tab_fg), LV_PART_MAIN);
     }
   }
   ctx->active = idx;
@@ -111,7 +109,8 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
 
   lv_obj_t* strip = lv_obj_create(root);
   lv_obj_set_size(strip, lv_pct(100), strip_h);
-  lv_obj_set_style_bg_color(strip, lv_color_hex(kStripBgHex), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(strip, lv_color_hex(theme::palette().strip),
+                            LV_PART_MAIN);
   lv_obj_set_style_border_width(strip, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(strip, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(strip, 4, LV_PART_MAIN);
@@ -150,7 +149,8 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_obj_t* btn = lv_obj_create(strip);
     lv_obj_set_flex_grow(btn, 1);
     lv_obj_set_height(btn, lv_pct(100));
-    lv_obj_set_style_bg_color(btn, lv_color_hex(kTabBgHex), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(theme::palette().tab),
+                              LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(btn, 4, LV_PART_MAIN);
     lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
@@ -158,7 +158,8 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
 
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, title);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(kTabFgHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(theme::palette().tab_fg),
+                                LV_PART_MAIN);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, LV_PART_MAIN);
     lv_obj_center(lbl);
 
@@ -321,6 +322,38 @@ bool validate(JsonObjectConst doc, std::string* err) {
 void LayoutManager::init(lv_obj_t* parent) { parent_ = parent; }
 
 ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
+  return apply_impl(json, src, false);
+}
+
+void LayoutManager::refresh_theme() {
+  if (theme::resolved() == built_mode_) return;
+  if (active_json_.empty()) {
+    // Nothing applied yet: the next apply builds in the new theme.
+    restyle_overlays();
+    return;
+  }
+  const std::string screen = active_screen();
+  ApplyResult r = apply_impl(active_json_, active_source_, true);
+  if (!r.ok) {
+    // The layout built before, so this is memory for the second tree.
+    // Keep the old one up and try again; refresh_theme() is a no-op
+    // once something else rebuilt it.
+    ESP_LOGW(TAG, "theme rebuild failed: %s, retrying in 30 s", r.err.c_str());
+    cockpit_hal::ui::after(30000, [this] { refresh_theme(); });
+    return;
+  }
+  if (!screen.empty()) select_screen(screen);
+}
+
+void LayoutManager::restyle_overlays() {
+  overlay().restyle();
+  alert_overlay().restyle();
+  mic_overlay().restyle();
+  wake_overlay().restyle();
+}
+
+ApplyResult LayoutManager::apply_impl(const std::string& json, ApplySource src,
+                                      bool theme_rebuild) {
   ApplyResult r{false, "", "", 0, 0, ""};
   if (!parent_) { r.err = "layout_manager not initialised"; return r; }
 
@@ -356,24 +389,26 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   // itself rather than a global screen style, so it's swapped
   // atomically with the rest of the layout and never bleeds into the
   // next one.
-  JsonObjectConst theme = doc["theme"];
-  uint32_t theme_bg = 0;
-  if (!theme.isNull() &&
-      parse_hex_color(theme["bg"] | (const char*)nullptr, &theme_bg)) {
-    lv_obj_set_style_bg_color(staging, lv_color_hex(theme_bg), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(staging, LV_OPA_COVER, LV_PART_MAIN);
-  } else {
-    lv_obj_set_style_bg_opa(staging, LV_OPA_TRANSP, LV_PART_MAIN);
-  }
+  JsonObjectConst theme_spec = doc["theme"];
 
-  // Default fg/accent for bars, arcs and buttons — must run before
-  // build_screens() below so newly built widgets pick up the layout's
-  // theme immediately. These are process-wide, so a build that fails
-  // has to put them back: the previous layout stays on screen, and its
-  // still-live widgets would otherwise read the REJECTED layout's theme
-  // on their next update.
+  // Theme mode and fg/accent — must run before build_screens() below so
+  // newly built widgets pick up the layout's theme immediately. These are
+  // process-wide, so a build that fails has to put them back: the
+  // previous layout stays on screen, and its still-live widgets would
+  // otherwise read the REJECTED layout's theme on their next update.
   const ThemeColors prev_theme = current_theme();
-  apply_theme(theme);
+  apply_theme(theme_spec);
+
+  // `theme.bg` overrides the palette's screen color, except at night
+  // where it would undo the red.
+  uint32_t screen_bg = theme::palette().screen;
+  uint32_t theme_bg = 0;
+  if (theme::palette().mode != theme::Mode::Night && !theme_spec.isNull() &&
+      parse_hex_color(theme_spec["bg"] | (const char*)nullptr, &theme_bg)) {
+    screen_bg = theme_bg;
+  }
+  lv_obj_set_style_bg_color(staging, lv_color_hex(screen_bg), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(staging, LV_OPA_COVER, LV_PART_MAIN);
 
   std::set<std::string> live_paths;
   JsonArrayConst screens = doc["screens"];
@@ -440,7 +475,9 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
       idle_dim_pct = display["idle_dim_pct"];
     }
   }
-  idle_dimmer().configure(idle_timeout_sec, idle_dim_pct);
+  // A theme rebuild happens at sunrise and sunset, often with nobody at
+  // the panel: re-arming would wake a dimmed screen.
+  if (!theme_rebuild) idle_dimmer().configure(idle_timeout_sec, idle_dim_pct);
 
   lv_obj_t* old_root = current_root_;
   lv_obj_set_hidden(staging, false);
@@ -454,6 +491,19 @@ ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {
   // needed there.
   if (screens.size() == 1) {
     stream_widgets_notify_visibility(current_root_, true);
+  }
+
+  built_mode_ = theme::resolved();
+  if (&json != &active_json_) active_json_ = json;
+  restyle_overlays();
+  if (theme_rebuild) {
+    // Same layout, same paths: nothing to persist, seed or subscribe.
+    r.ok = true;
+    r.name = active_name_;
+    r.screens = screens.size();
+    ESP_LOGI(TAG, "rebuilt layout '%s' for theme %s", r.name.c_str(),
+             theme::mode_name(built_mode_));
+    return r;
   }
 
   // Persist only after a successful swap, and only for pushed layouts

@@ -1,18 +1,17 @@
 #include "status_overlay.h"
 
 #include <cstdio>
+#include <initializer_list>
+
+#include "theme.h"
 
 namespace jlp {
 
 namespace {
 constexpr int kStripHeight = 28;
-constexpr uint32_t kBgHex = 0x161b22;
-constexpr uint32_t kFgHex = 0xe6edf3;
-constexpr uint32_t kMutedHex = 0x8b949e;
 
 lv_obj_t* make_label(lv_obj_t* parent, const char* init) {
   lv_obj_t* l = lv_label_create(parent);
-  lv_obj_set_style_text_color(l, lv_color_hex(kFgHex), LV_PART_MAIN);
   lv_obj_set_style_text_font(l, &lv_font_montserrat_14, LV_PART_MAIN);
   lv_label_set_text(l, init);
   return l;
@@ -21,13 +20,11 @@ lv_obj_t* make_label(lv_obj_t* parent, const char* init) {
 
 void StatusOverlay::init() {
   lv_obj_t* scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x0d1117), LV_PART_MAIN);
   lv_obj_set_style_pad_all(scr, 0, LV_PART_MAIN);
 
   strip_ = lv_obj_create(scr);
   lv_obj_set_size(strip_, LV_HOR_RES, kStripHeight);
   lv_obj_align(strip_, LV_ALIGN_TOP_MID, 0, 0);
-  lv_obj_set_style_bg_color(strip_, lv_color_hex(kBgHex), LV_PART_MAIN);
   lv_obj_set_style_border_width(strip_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(strip_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(strip_, 4, LV_PART_MAIN);
@@ -46,8 +43,6 @@ void StatusOverlay::init() {
   content_root_ = lv_obj_create(scr);
   lv_obj_set_size(content_root_, LV_HOR_RES, LV_VER_RES - kStripHeight);
   lv_obj_align(content_root_, LV_ALIGN_TOP_MID, 0, kStripHeight);
-  lv_obj_set_style_bg_color(content_root_, lv_color_hex(0x0d1117),
-                            LV_PART_MAIN);
   lv_obj_set_style_border_width(content_root_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(content_root_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(content_root_, 0, LV_PART_MAIN);
@@ -62,7 +57,6 @@ void StatusOverlay::init() {
   sk_lost_ = lv_obj_create(scr);
   lv_obj_set_size(sk_lost_, LV_HOR_RES, 40);
   lv_obj_align(sk_lost_, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_bg_color(sk_lost_, lv_color_hex(0xf85149), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(sk_lost_, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_border_width(sk_lost_, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(sk_lost_, 0, LV_PART_MAIN);
@@ -70,12 +64,29 @@ void StatusOverlay::init() {
   lv_obj_set_scrollable(sk_lost_, false);
   lv_obj_set_hidden(sk_lost_, true);
   sk_lost_lbl_ = lv_label_create(sk_lost_);
-  lv_obj_set_style_text_color(sk_lost_lbl_, lv_color_hex(0xffffff),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(sk_lost_lbl_, &lv_font_montserrat_14,
                              LV_PART_MAIN);
   lv_label_set_text(sk_lost_lbl_, "Signal K connection lost");
   lv_obj_center(sk_lost_lbl_);
+
+  restyle();
+}
+
+void StatusOverlay::restyle() {
+  if (!strip_) return;
+  const theme::Palette& p = theme::palette();
+  lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(p.screen),
+                            LV_PART_MAIN);
+  lv_obj_set_style_bg_color(content_root_, lv_color_hex(p.screen),
+                            LV_PART_MAIN);
+  lv_obj_set_style_bg_color(strip_, lv_color_hex(p.strip), LV_PART_MAIN);
+  for (lv_obj_t* l : {lbl_host_, lbl_wifi_, lbl_sk_, lbl_n2k_, lbl_sys_}) {
+    lv_obj_set_style_text_color(l, lv_color_hex(p.fg), LV_PART_MAIN);
+  }
+  const uint32_t lost = theme::state_color(3);
+  lv_obj_set_style_bg_color(sk_lost_, lv_color_hex(lost), LV_PART_MAIN);
+  lv_obj_set_style_text_color(sk_lost_lbl_, lv_color_hex(theme::ink_on(lost)),
+                              LV_PART_MAIN);
 }
 
 void StatusOverlay::set_hostname(const char* hostname) {

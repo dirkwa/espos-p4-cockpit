@@ -32,7 +32,7 @@ Capability descriptor. Always returns 200 with a JSON body:
   "name": "Main helm",
   "hostname": "p4-cockpit",
   "firmware": "p4-cockpit-jlp-1.0.1",
-  "display": { "w": 1024, "h": 600 },
+  "display": { "w": 1024, "h": 600, "themes": ["auto","day","dark","night"], "theme": "day" },
   "widgets": {
     "label":  { "fields": ["x","y","w","h","label","bind","display"] },
     "toggle": { "fields": ["x","y","w","h","label","bind"] },
@@ -169,7 +169,36 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `status_overlay`  | bool    | no       | `true`  | Whether the device's status strip should be visible. |
 | `tab_strip_height`| int     | no       | `56`    | Pixel height of the multi-screen tab strip. Ignored when there is only one screen. |
 | `display`         | object  | no       | —       | Backlight power-save. `display.idle_timeout_sec` (uint): seconds of no touch before the backlight dims; `0` or omitted disables the dimmer. `display.idle_dim_pct` (uint 0-100, default 0 = fully off): brightness while idle. While dimmed the device covers the layout with a "TAP TO WAKE" overlay so the first wake-tap can't accidentally hit a widget underneath. **Day/night gating**: the dimmer only engages at night, driven by SignalK `environment.mode` (`"day"`/`"night"`, subscribed automatically) as published by the `signalk-espos-manager` plugin, which computes it offline from `navigation.position` with `@openwaters/almanac` (`day` from sunrise to sunset); `signalk-derived-data`'s Sun calculation publishes the same path and works too. Fail-safe to always-on until SK has delivered a value (so a server without either plugin, or without a position, just leaves the panel bright). Wake sources: any touch, any incoming notification (escalation only), a fresh layout push. All three re-arm the idle timer. Capability advertised by `/hello.display.idle_timeout = true` + `idle_dim_pct = true`. |
+| `theme`           | object  | no       | —       | Panel colors, see [Themes](#themes). |
 | `screens`         | array   | yes      | —       | At least one screen.                                 |
+
+### Themes
+
+The panel has three color themes: **day** (light, readable in sunlight,
+espOS blue accent), **dark** (deep navy, signal-yellow accent, full zone
+colors) and **night** (red on black, to keep night vision). `theme` picks
+one and can override a few colors:
+
+| Field      | Type   | Default  | Notes |
+|------------|--------|----------|-------|
+| `mode`     | string | `"auto"` | `auto`, `day`, `dark` or `night`. `auto` follows SignalK `environment.mode` (the same path the idle dimmer reads): night red from sunset, `day_base` by day. Until a value arrives, auto shows `day_base`. |
+| `day_base` | string | `"day"`  | What `auto` shows by day: `day` or `dark`. Defaults to `dark` when the layout sets `bg`, `fg` or `accent`, since such colors were picked for the dark panel. |
+| `bg`       | string | palette  | Hex screen background. Ignored at night. |
+| `fg`       | string | palette  | Hex default text color. Ignored at night. |
+| `accent`   | string | palette  | Hex default indicator color (bars, arcs, sliders). Ignored at night. |
+
+A theme change at sunrise or sunset rebuilds the active layout through the
+same staging swap as a push, so the screen never blanks, and stays on the
+selected tab. Widgets restart with the rebuild; an `anchor_track` keeps its
+swing tail. Zones and notifications use the theme's shades of the same
+escalation (night: red shades that brighten with severity). At night a
+`label` or `value` tile shows alert and warn as a red border and keeps its
+dark fill; alarm and emergency still fill the tile. Per-widget
+`bg_color`/`fg_color` apply in every theme.
+
+`/hello.display.themes` lists the accepted modes and `/hello.display.theme`
+the one on screen now (`day`, `dark` or `night`). A device without them
+ignores `theme.mode`.
 
 ### Screen object
 
@@ -190,8 +219,8 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `label`    | string  | no       | —       | Caption text. Semantics depend on widget kind.         |
 | `bind`     | string  | no       | —       | SignalK path. Required for everything except a label whose `label` is a fixed string. |
 | `display`  | object  | no       | —       | Value formatting (see below).                          |
-| `bg_color` | string  | no       | theme `#161b22` | Hex color (`#rrggbb` or `#rgb`) for the tile background. **SK zones still win** when the path matches one; this is the fallback. Use it for operator-meaningful fixed colors (STOP=red, ACK=yellow) that should be visible even without zone state. |
-| `fg_color` | string  | no       | theme `#e6edf3` / `#58a6ff` | Hex color for the value text (label/bar) or arc indicator. Same zone-wins precedence. |
+| `bg_color` | string  | no       | theme tile color | Hex color (`#rrggbb` or `#rgb`) for the tile background. **SK zones still win** when the path matches one; this is the fallback. Use it for operator-meaningful fixed colors (STOP=red, ACK=yellow) that should be visible even without zone state. |
+| `fg_color` | string  | no       | theme text / accent color | Hex color for the value text (label/bar) or arc indicator. Same zone-wins precedence. |
 
 ### `display` object
 
@@ -413,7 +442,7 @@ The device subscribes to every `bind` path in the active layout over a single Si
 The device requests meta in-stream (`sendMeta=all`) and uses two kinds of meta per path:
 
 - **`displayUnits` formula** (preferred when available): inferred `scale` / `offset` / `unit` so a widget without an explicit `display` block still formats sensibly.
-- **`zones[]`**: array of `{lower?, upper?, state}` entries where `state ∈ {nominal, alert, warn, alarm, emergency}`. Matching is in **raw SK units** (`lower ≤ raw_value < upper`, or `raw_value == lower` when `lower == upper` for point zones on bool/int paths). Zones are first-match in declaration order. Matching widget's background is tinted per the state, using a maritime-helm escalation palette: nominal/normal → green, alert → yellow, warn → orange, alarm → red, emergency → purple. Widgets without zone meta get the theme default. *Note: this palette is one severity step warmer than the SK spec defaults (which puts alert at blue) — chosen so a glance at the helm reads like a traffic light.*
+- **`zones[]`**: array of `{lower?, upper?, state}` entries where `state ∈ {nominal, alert, warn, alarm, emergency}`. Matching is in **raw SK units** (`lower ≤ raw_value < upper`, or `raw_value == lower` when `lower == upper` for point zones on bool/int paths). Zones are first-match in declaration order. Matching widget's background is tinted per the state, using a maritime-helm escalation palette: nominal/normal → green, alert → yellow, warn → orange, alarm → red, emergency → purple. Widgets without zone meta get the theme default. The shades follow the active [theme](#themes). *Note: this palette is one severity step warmer than the SK spec defaults (which puts alert at blue) — chosen so a glance at the helm reads like a traffic light.*
 
 When the layout's explicit `display` block is present it overrides the path's `displayUnits` formula.
 

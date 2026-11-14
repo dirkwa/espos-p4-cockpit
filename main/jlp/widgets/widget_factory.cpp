@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -29,19 +30,29 @@ namespace ui = cockpit_hal::ui;
 #include "../net/stream_client.h"
 #include "../notifications_registry.h"
 #include "../subject_registry.h"
+#include "../theme.h"
 #include "../zone_registry.h"
 
 namespace jlp {
 
 namespace {
 
-constexpr uint32_t kFgHexDefault = 0xe6edf3;
-constexpr uint32_t kAccentHexDefault = 0x58a6ff;
+// The layout's `theme.fg` / `theme.accent`, laid over the palette. Night
+// ignores them: a custom color there would undo the red.
+ThemeColors g_theme{};
 
-uint32_t kFgHex = kFgHexDefault;
-uint32_t kMutedHex = 0x8b949e;
-uint32_t kAccentHex = kAccentHexDefault;
-constexpr uint32_t kTileBgHex = 0x161b22;
+bool overrides_apply() { return theme::palette().mode != theme::Mode::Night; }
+uint32_t fg_hex() {
+  return g_theme.fg_set && overrides_apply() ? g_theme.fg : theme::palette().fg;
+}
+uint32_t accent_hex() {
+  return g_theme.accent_set && overrides_apply() ? g_theme.accent
+                                                 : theme::palette().accent;
+}
+uint32_t muted_hex() { return theme::palette().muted; }
+uint32_t tile_hex() { return theme::palette().tile; }
+uint32_t edge_hex() { return theme::palette().edge; }
+uint32_t track_hex() { return theme::palette().track; }
 
 constexpr int32_t kBarSteps = 1000;  // LVGL bar/arc integer range
 
@@ -60,7 +71,7 @@ struct Colors {
 };
 
 Colors parse_colors(JsonObjectConst spec) {
-  Colors c{kTileBgHex, kFgHex, false, false};
+  Colors c{tile_hex(), fg_hex(), false, false};
   c.bg_explicit =
       parse_hex_color(spec["bg_color"] | (const char*)nullptr, &c.bg);
   c.fg_explicit =
@@ -127,6 +138,51 @@ uint32_t zone_color(const char* path, float display_value, uint32_t fallback) {
   return z ? color_for_state(z->state) : fallback;
 }
 
+// Zone tint for a whole tile (label, value). Night keeps the tile dark
+// below alarm and draws alert and warn as a red border instead, so a
+// warning doesn't light up the cockpit; alarm and emergency still fill.
+// `text` is the value label; the tile's other labels are caption and unit.
+void paint_tile_zone(lv_obj_t* tile, lv_obj_t* text, const char* path,
+                     float raw, const Colors& c, int idle_border_w) {
+  const Zone* z = (path && *path) ? zones().match(path, raw) : nullptr;
+  uint32_t bg = c.bg, ink = c.fg, edge = edge_hex();
+  int border_w = idle_border_w;
+  if (z) {
+    const uint32_t fill = color_for_state(z->state);
+    const bool night = theme::palette().mode == theme::Mode::Night;
+    if (night && (z->state == ZoneState::Alert || z->state == ZoneState::Warn)) {
+      edge = z->state == ZoneState::Warn ? theme::palette().fg : muted_hex();
+      border_w = 3;
+    } else if (!night || z->state == ZoneState::Alarm ||
+               z->state == ZoneState::Emergency) {
+      bg = fill;
+      ink = theme::ink_on(fill);
+    }
+  }
+  lv_obj_set_style_bg_color(tile, lv_color_hex(bg), LV_PART_MAIN);
+  lv_obj_set_style_border_color(tile, lv_color_hex(edge), LV_PART_MAIN);
+  lv_obj_set_style_border_width(tile, border_w, LV_PART_MAIN);
+  // Caption and unit are muted on the plain tile, but muted grey on an
+  // orange or red fill can't be read: they take the fill's ink too.
+  const bool filled = bg != c.bg;
+  for (uint32_t i = 0; i < lv_obj_get_child_count(tile); i++) {
+    lv_obj_t* child = lv_obj_get_child(tile, i);
+    if (!lv_obj_check_type(child, &lv_label_class)) continue;
+    const uint32_t col = child == text ? ink : (filled ? ink : muted_hex());
+    lv_obj_set_style_text_color(child, lv_color_hex(col), LV_PART_MAIN);
+  }
+}
+
+// LVGL's default theme draws the switch track grey and the knob white,
+// which glares at night. Take both from the palette.
+void style_switch(lv_obj_t* sw) {
+  const theme::Palette& p = theme::palette();
+  const bool night = p.mode == theme::Mode::Night;
+  lv_obj_set_style_bg_color(sw, lv_color_hex(p.track), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(sw, lv_color_hex(night ? p.muted : 0xffffff),
+                            LV_PART_KNOB);
+}
+
 // Map a display-space value into [0, kBarSteps] for LVGL.
 int32_t scale_to_steps(float display_value, float min, float max) {
   if (max <= min) return 0;
@@ -185,7 +241,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
 
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -264,8 +320,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         // Guard the sibling deref; the observer auto-unsubscribes on
         // its own target's delete, so `w` above is always valid here.
         if (!lv_obj_is_valid(lc->tile)) return;
-        uint32_t bg = zone_color(lc->d.path, raw, lc->colors.bg);
-        lv_obj_set_style_bg_color(lc->tile, lv_color_hex(bg), LV_PART_MAIN);
+        paint_tile_zone(lc->tile, w, lc->d.path, raw, lc->colors, 0);
       },
       val, nullptr);
 
@@ -299,7 +354,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(root, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(root, lv_color_hex(edge_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 1, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_pad(root, 0, LV_PART_MAIN);
@@ -310,7 +365,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
 
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -333,7 +388,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // Unit label flush bottom-right. The big number stays the focal
   // point; unit is informational only.
   lv_obj_t* unit_lbl = lv_label_create(root);
-  lv_obj_set_style_text_color(unit_lbl, lv_color_hex(kMutedHex),
+  lv_obj_set_style_text_color(unit_lbl, lv_color_hex(muted_hex()),
                               LV_PART_MAIN);
   lv_obj_set_style_text_font(unit_lbl, &lv_font_montserrat_14,
                              LV_PART_MAIN);
@@ -381,8 +436,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         // Zone tint paints the whole tile bg. Raw value matched
         // against raw-unit zones (firmware convention). Falls back
         // to spec'd bg_color when no zone matches.
-        uint32_t bg = zone_color(vc->d.path, raw, vc->colors.bg);
-        lv_obj_set_style_bg_color(vc->tile, lv_color_hex(bg), LV_PART_MAIN);
+        paint_tile_zone(vc->tile, w, vc->d.path, raw, vc->colors, 1);
       },
       val, nullptr);
 
@@ -436,24 +490,36 @@ bool parse_hex_color(const char* s, uint32_t* out) {
   return true;
 }
 
-ThemeColors current_theme() { return ThemeColors{kFgHex, kAccentHex}; }
+ThemeColors current_theme() { return g_theme; }
 
 void restore_theme(const ThemeColors& t) {
-  kFgHex = t.fg;
-  kAccentHex = t.accent;
+  g_theme = t;
+  theme::g_layout_mode = t.mode;
+  theme::g_day_base = t.day_base;
+  theme::sync_lvgl_theme();
 }
 
-void apply_theme(JsonObjectConst theme) {
-  // Reset to firmware defaults first so a layout that omits `theme`
-  // (or a field of it) doesn't inherit the previous layout's colors.
-  kFgHex = kFgHexDefault;
-  kAccentHex = kAccentHexDefault;
-  if (theme.isNull()) return;
-  uint32_t v;
-  if (parse_hex_color(theme["fg"] | (const char*)nullptr, &v)) kFgHex = v;
-  if (parse_hex_color(theme["accent"] | (const char*)nullptr, &v)) {
-    kAccentHex = v;
+void apply_theme(JsonObjectConst spec) {
+  // Start from the defaults so a layout that omits `theme` (or a field of
+  // it) doesn't inherit the previous layout's choice.
+  ThemeColors t{};
+  if (!spec.isNull()) {
+    t.fg_set = parse_hex_color(spec["fg"] | (const char*)nullptr, &t.fg);
+    t.accent_set =
+        parse_hex_color(spec["accent"] | (const char*)nullptr, &t.accent);
+    theme::parse_mode(spec["mode"] | (const char*)nullptr, &t.mode);
+    theme::Mode base = theme::Mode::Day;
+    if (theme::parse_mode(spec["day_base"] | (const char*)nullptr, &base)) {
+      t.day_base = base == theme::Mode::Dark ? theme::Mode::Dark
+                                             : theme::Mode::Day;
+    } else if (!spec["bg"].isNull() || !spec["fg"].isNull() ||
+               !spec["accent"].isNull()) {
+      // Colors from before the themes were picked against the dark
+      // panel; a light fg on the white day tiles would vanish.
+      t.day_base = theme::Mode::Dark;
+    }
   }
+  restore_theme(t);
 }
 
 namespace {
@@ -503,6 +569,7 @@ lv_obj_t* build_audio_mute_toggle(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
 
   lv_obj_t* sw = lv_switch_create(root);
+  style_switch(sw);
   lv_obj_set_size(sw, kSwitchW, kSwitchH);
   lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
   if (chime().muted()) lv_obj_add_state(sw, LV_STATE_CHECKED);
@@ -548,6 +615,7 @@ lv_obj_t* make_local_toggle(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
 
   lv_obj_t* sw = lv_switch_create(root);
+  style_switch(sw);
   lv_obj_set_size(sw, kSwitchW, kSwitchH);
   lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
   if (initial_on) lv_obj_add_state(sw, LV_STATE_CHECKED);
@@ -877,7 +945,7 @@ lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         lv_slider_set_value(w, scale_to_steps(v, sc->min, sc->max),
                             LV_ANIM_OFF);
         uint32_t fallback = sc->colors.fg_explicit ? sc->colors.fg
-                                                    : kAccentHex;
+                                                    : accent_hex();
         uint32_t c = zone_color(sc->display.path, raw, fallback);
         lv_obj_set_style_bg_color(w, lv_color_hex(c), LV_PART_INDICATOR);
       },
@@ -955,6 +1023,7 @@ lv_obj_t* build_toggle(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   }
 
   lv_obj_t* sw = lv_switch_create(root);
+  style_switch(sw);
   lv_obj_set_size(sw, 60, 30);
   lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
 
@@ -1123,7 +1192,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       if (t1 <= t0) continue;
       int ang0 = sa + (int)(total_sweep * t0);
       int ang1 = sa + (int)(total_sweep * t1);
-      uint32_t color = 0x3fb950;
+      uint32_t color = theme::state_color(0);
       parse_hex_color(hex, &color);
 
       lv_obj_t* band = lv_arc_create(root);
@@ -1147,8 +1216,8 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_angles(arc, sa, sa);
   lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
   lv_obj_set_clickable(arc, false);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(0x30363d), LV_PART_MAIN);
-  lv_obj_set_style_arc_color(arc, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(track_hex()), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(arc, lv_color_hex(accent_hex()), LV_PART_INDICATOR);
   // Pin the arc track + indicator width to ~8% of the arc side so the
   // device matches the designer's SVG (stroke=8 in a 100-unit
   // viewBox). LVGL 9's default theme uses a fixed ~25 px which
@@ -1206,7 +1275,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
                 lv_event_get_user_data(e));
           },
           LV_EVENT_DELETE, tick_pts);
-      lv_obj_set_style_line_color(tick, lv_color_hex(kMutedHex), LV_PART_MAIN);
+      lv_obj_set_style_line_color(tick, lv_color_hex(muted_hex()), LV_PART_MAIN);
       // Was 1px, per the report that even without the overlap above
       // ticks this thin read as near-invisible on the panel.
       lv_obj_set_style_line_width(tick, 2, LV_PART_MAIN);
@@ -1219,7 +1288,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         // transform it twice (a 0..100 arc with scale=100 would read 10000).
         float disp_val = v_min + (v_max - v_min) * t;
         lv_obj_t* lbl = lv_label_create(root);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(kMutedHex),
+        lv_obj_set_style_text_color(lbl, lv_color_hex(muted_hex()),
                                      LV_PART_MAIN);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
         lv_label_set_text_fmt(lbl, "%.*f", tmp_disp.decimals, disp_val);
@@ -1261,7 +1330,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         // Fall back to fg_color (which doubles as the indicator color)
         // when no zone matches, else default accent.
         uint32_t fallback =
-            rb->colors.fg_explicit ? rb->colors.fg : kAccentHex;
+            rb->colors.fg_explicit ? rb->colors.fg : accent_hex();
         uint32_t c = zone_color(rb->display.path, raw, fallback);
         lv_obj_set_style_arc_color(w, lv_color_hex(c), LV_PART_INDICATOR);
       },
@@ -1277,7 +1346,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_center(val);
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align_to(cap, val, LV_ALIGN_OUT_TOP_MID, 0, -2);
@@ -1316,7 +1385,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(root, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(root, lv_color_hex(edge_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 1, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_pad(root, 0, LV_PART_MAIN);
@@ -1330,7 +1399,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   const char* caption = spec["label"] | (const char*)nullptr;
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1346,9 +1415,9 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_t* bar = lv_bar_create(root);
   lv_bar_set_range(bar, 0, kBarSteps);
   // Track: medium grey, clearly visible against tile bg.
-  lv_obj_set_style_bg_color(bar, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(bar, lv_color_hex(track_hex()), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(bar, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(bar, lv_color_hex(accent_hex()), LV_PART_INDICATOR);
   lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_INDICATOR);
   if (vertical) {
     lv_obj_set_size(bar, 24, lv_pct(75));
@@ -1385,7 +1454,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         // Fall back to fg_color override (indicator color) when no
         // zone matches, else default accent.
         uint32_t fallback =
-            rb->colors.fg_explicit ? rb->colors.fg : kAccentHex;
+            rb->colors.fg_explicit ? rb->colors.fg : accent_hex();
         uint32_t c = zone_color(rb->display.path, raw, fallback);
         lv_obj_set_style_bg_color(w, lv_color_hex(c), LV_PART_INDICATOR);
       },
@@ -1436,7 +1505,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(root, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(root, lv_color_hex(edge_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 1, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_pad(root, 0, LV_PART_MAIN);
@@ -1450,7 +1519,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
   int caption_h = 0;
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1531,14 +1600,14 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     if (signed_range) {
       lv_bar_set_mode(bar, LV_BAR_MODE_RANGE);
     }
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x30363d), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(track_hex()), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
     // LVGL's default theme uses LV_RADIUS_CIRCLE on bars, which turns
     // small near-square bars into pills/circles. Force a small fixed
     // radius so the bar reads as a rectangle at every aspect.
     lv_obj_set_style_radius(bar, 3, LV_PART_MAIN);
     lv_obj_set_style_radius(bar, 3, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(kAccentHex), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(accent_hex()), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_INDICATOR);
     // Vertical: lv_bar's default mode is horizontal; size+orientation
     // is determined by the widget aspect, so a tall narrow bar fills
@@ -1556,7 +1625,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
       float frac = (0.f - v_min) / (v_max - v_min);
       int baseline_y = cell_y + bar_h - (int)(bar_h * frac);
       lv_obj_t* zero_lbl = lv_label_create(root);
-      lv_obj_set_style_text_color(zero_lbl, lv_color_hex(0x8b949e),
+      lv_obj_set_style_text_color(zero_lbl, lv_color_hex(muted_hex()),
                                   LV_PART_MAIN);
       lv_obj_set_style_text_font(zero_lbl, &lv_font_montserrat_14,
                                  LV_PART_MAIN);
@@ -1566,7 +1635,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
 
     // Live value text drawn ON the bar (centered).
     lv_obj_t* val_label = lv_label_create(root);
-    lv_obj_set_style_text_color(val_label, lv_color_hex(0xffffff), LV_PART_MAIN);
+    lv_obj_set_style_text_color(val_label, lv_color_hex(fg_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(val_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(val_label, "—");
     lv_obj_set_width(val_label, bar_w);
@@ -1580,7 +1649,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     int tick_x = cell_x + bar_w + 4;
     int tick_w = slot_w - bar_w - 6;
     lv_obj_t* max_tick = lv_label_create(root);
-    lv_obj_set_style_text_color(max_tick, lv_color_hex(kMutedHex),
+    lv_obj_set_style_text_color(max_tick, lv_color_hex(muted_hex()),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_font(max_tick, &lv_font_montserrat_14,
                                LV_PART_MAIN);
@@ -1590,7 +1659,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     // negative values don't wrap. Cap height to one line.
     lv_obj_set_height(max_tick, 16);
     lv_obj_t* min_tick = lv_label_create(root);
-    lv_obj_set_style_text_color(min_tick, lv_color_hex(kMutedHex),
+    lv_obj_set_style_text_color(min_tick, lv_color_hex(muted_hex()),
                                 LV_PART_MAIN);
     lv_obj_set_style_text_font(min_tick, &lv_font_montserrat_14,
                                LV_PART_MAIN);
@@ -1603,7 +1672,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     // tile edge. Same muted color as the ticks.
     if (d.unit[0]) {
       lv_obj_t* unit_lbl = lv_label_create(root);
-      lv_obj_set_style_text_color(unit_lbl, lv_color_hex(kMutedHex),
+      lv_obj_set_style_text_color(unit_lbl, lv_color_hex(muted_hex()),
                                   LV_PART_MAIN);
       lv_obj_set_style_text_font(unit_lbl, &lv_font_montserrat_14,
                                  LV_PART_MAIN);
@@ -1654,9 +1723,19 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
             lv_bar_set_value(w, v_steps, LV_ANIM_OFF);
           }
           uint32_t fallback = rb.colors.fg_explicit ? rb.colors.fg
-                                                     : kAccentHex;
+                                                     : accent_hex();
           uint32_t c = zone_color(rb.display.path, raw, fallback);
           lv_obj_set_style_bg_color(w, lv_color_hex(c), LV_PART_INDICATOR);
+          // The value text sits mid-bar: once the fill reaches it, it
+          // needs the color that reads on the fill, not on the track.
+          const bool covered = !(rb.min < 0.f && rb.max > 0.f) &&
+                               v_steps >= kBarSteps / 2;
+          if (lv_obj_is_valid(bcb->value_label)) {
+            lv_obj_set_style_text_color(
+                bcb->value_label,
+                lv_color_hex(covered ? theme::ink_on(c) : fg_hex()),
+                LV_PART_MAIN);
+          }
           // Live value text. We deliberately omit the unit here — the
           // unit appears once next to the ticks; repeating it on every
           // bar would crowd the small cell.
@@ -1674,7 +1753,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     const char* b_label = bspec["label"] | "";
     if (*b_label) {
       lv_obj_t* lbl = lv_label_create(root);
-      lv_obj_set_style_text_color(lbl, lv_color_hex(kMutedHex), LV_PART_MAIN);
+      lv_obj_set_style_text_color(lbl, lv_color_hex(muted_hex()), LV_PART_MAIN);
       lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
       lv_label_set_text(lbl, b_label);
       lv_obj_set_pos(lbl, cell_x, cell_y + bar_h + 4);
@@ -1756,8 +1835,17 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // tile, an uncolored button has no zone fallback to lean on. Read it
   // as an active, tappable tile by default rather than a flat
   // background tile — same accent used as the bar/arc indicator
-  // fallback (see parse_colors' kTileBgHex default above).
-  if (!colors.bg_explicit) colors.bg = kAccentHex;
+  // fallback (see parse_colors' tile_hex() default above).
+  if (!colors.bg_explicit) {
+    colors.bg = accent_hex();
+    // The palette's accent has a matching text color; a layout accent
+    // gets whichever of dark or light reads on it.
+    if (!colors.fg_explicit) {
+      colors.fg = g_theme.accent_set && overrides_apply()
+                      ? theme::ink_on(colors.bg)
+                      : theme::palette().on_accent;
+    }
+  }
   const char* path = spec["bind"] | (const char*)nullptr;
   if (!path) { *err = "button: bind required"; return nullptr; }
   const char* caption = spec["label"] | "button";
@@ -1919,28 +2007,20 @@ uint32_t row_color_for(const std::string& state_token) {
   NotState s = parse_not_state(state_token.c_str());
   switch (s) {
     case NotState::Nominal:
-    case NotState::Normal:    return 0x3fb950;
-    case NotState::Alert:     return 0xd29922;
-    case NotState::Warn:      return 0xdb6d28;
-    case NotState::Alarm:     return 0xf85149;
-    case NotState::Emergency: return 0xa371f7;
+    case NotState::Normal:    return theme::state_color(0);
+    case NotState::Alert:     return theme::state_color(1);
+    case NotState::Warn:      return theme::state_color(2);
+    case NotState::Alarm:     return theme::state_color(3);
+    case NotState::Emergency: return theme::state_color(4);
   }
-  return 0x161b22;
+  return tile_hex();
 }
 
-// Pick a contrasting text color for a row given its background.
-// Light theme bg keeps the configured fg; tinted (state-coded) rows
-// take dark text so the bright palette stays legible.
-uint32_t row_text_color_for(uint32_t row_bg, uint32_t default_fg) {
-  // The default tile bg is dark; any other color in our palette is
-  // bright. A simple luminance test is more robust than enumerating
-  // the palette since bg_color overrides can also be bright.
-  uint32_t r = (row_bg >> 16) & 0xFF;
-  uint32_t g = (row_bg >> 8) & 0xFF;
-  uint32_t b = row_bg & 0xFF;
-  // ITU-R BT.601 perceived brightness.
-  uint32_t y = (r * 299 + g * 587 + b * 114) / 1000;
-  return y >= 128 ? 0x0d1117 : default_fg;
+// Plain rows keep the configured fg; state-coded rows take whatever
+// reads on their fill.
+uint32_t row_text_color_for(uint32_t row_bg, uint32_t plain_bg,
+                            uint32_t default_fg) {
+  return row_bg == plain_bg ? default_fg : theme::ink_on(row_bg);
 }
 
 void list_rebuild_rows(ListCtx* lc) {
@@ -1969,7 +2049,7 @@ void list_rebuild_rows(ListCtx* lc) {
     }
     lv_obj_set_style_bg_color(row, lv_color_hex(bg), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
-    uint32_t fg = row_text_color_for(bg, lc->colors.fg);
+    uint32_t fg = row_text_color_for(bg, lc->colors.bg, lc->colors.fg);
 
     int x = 0;
     for (const ListColumn& col : lc->columns) {
@@ -1987,7 +2067,7 @@ void list_rebuild_rows(ListCtx* lc) {
   }
   if (count == 0) {
     lv_obj_t* empty = lv_label_create(lc->rows_box);
-    lv_obj_set_style_text_color(empty, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(empty, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(empty, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(empty, "(no pending notifications)");
     lv_obj_center(empty);
@@ -2007,7 +2087,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   apply_geometry(root, spec);
   lv_obj_set_style_bg_color(root, lv_color_hex(colors.bg), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_color(root, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(root, lv_color_hex(edge_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(root, 1, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_pad(root, 0, LV_PART_MAIN);
@@ -2021,7 +2101,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   int header_h = 0;
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
-    lv_obj_set_style_text_color(cap, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -2034,7 +2114,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_pos(hdr, 0, header_h);
   lv_obj_set_style_bg_opa(hdr, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
-  lv_obj_set_style_border_color(hdr, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(hdr, lv_color_hex(edge_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(hdr, 1, LV_PART_MAIN);
   lv_obj_set_style_outline_width(hdr, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(hdr, 0, LV_PART_MAIN);
@@ -2061,7 +2141,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
     lc->columns.push_back(col);
 
     lv_obj_t* h = lv_label_create(hdr);
-    lv_obj_set_style_text_color(h, lv_color_hex(kMutedHex), LV_PART_MAIN);
+    lv_obj_set_style_text_color(h, lv_color_hex(muted_hex()), LV_PART_MAIN);
     lv_obj_set_style_text_font(h, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_pos(h, x, 0);
     lv_obj_set_width(h, col.width);
@@ -2158,9 +2238,9 @@ static constexpr float kAnchorWarnMarginM = 3.0f;
 //   yellow — within kAnchorWarnMarginM of the limit but still inside.
 //   green  — comfortably inside.
 static uint32_t anchor_ring_color(float cur_m, float max_m) {
-  if (cur_m > max_m) return 0xf85149;                        // red
-  if (max_m - cur_m <= kAnchorWarnMarginM) return 0xd29922;  // yellow
-  return 0x3fb950;                                           // green
+  if (cur_m > max_m) return theme::state_color(3);
+  if (max_m - cur_m <= kAnchorWarnMarginM) return theme::state_color(1);
+  return theme::state_color(0);
 }
 
 static void anchor_render(AnchorCtx* a) {
@@ -2169,7 +2249,7 @@ static void anchor_render(AnchorCtx* a) {
     // placeholder instead of a stale bearing + distance.
     lv_obj_set_hidden(a->needle, true);
     lv_arc_set_value(a->ring, 0);
-    lv_obj_set_style_arc_color(a->ring, lv_color_hex(kMutedHex),
+    lv_obj_set_style_arc_color(a->ring, lv_color_hex(muted_hex()),
                                LV_PART_INDICATOR);
     // ASCII dash, not an em-dash: the compiled Montserrat glyph set
     // doesn't carry U+2014, so "—" renders as a tofu box on-device.
@@ -2190,7 +2270,7 @@ static void anchor_render(AnchorCtx* a) {
   // happen when state="on" lands before the maxRadius delta.
   uint32_t ring_color = a->max_m > 0.f
                             ? anchor_ring_color(a->cur_m, a->max_m)
-                            : kMutedHex;
+                            : muted_hex();
   lv_obj_set_style_arc_color(a->ring, lv_color_hex(ring_color),
                              LV_PART_INDICATOR);
 
@@ -2269,7 +2349,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_angles(rose, 0, 0);
   lv_obj_remove_style(rose, NULL, LV_PART_KNOB);
   lv_obj_set_clickable(rose, false);
-  lv_obj_set_style_arc_color(rose, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(rose, lv_color_hex(track_hex()), LV_PART_MAIN);
   lv_obj_set_style_arc_width(rose, 2, LV_PART_MAIN);
 
   // Radius ring: a 270° arc (gap at the bottom) whose indicator fills
@@ -2283,7 +2363,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_arc_set_angles(ring, 135, 135);
   lv_obj_remove_style(ring, NULL, LV_PART_KNOB);
   lv_obj_set_clickable(ring, false);
-  lv_obj_set_style_arc_color(ring, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(ring, lv_color_hex(track_hex()), LV_PART_MAIN);
   lv_obj_set_style_arc_width(ring, side / 14, LV_PART_MAIN);
   lv_obj_set_style_arc_width(ring, side / 14, LV_PART_INDICATOR);
 
@@ -2302,7 +2382,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_align(dist, LV_ALIGN_CENTER, 0, -4);
 
   lv_obj_t* caption = lv_label_create(root);
-  lv_obj_set_style_text_color(caption, lv_color_hex(kMutedHex), LV_PART_MAIN);
+  lv_obj_set_style_text_color(caption, lv_color_hex(muted_hex()), LV_PART_MAIN);
   lv_obj_set_style_text_font(caption, &lv_font_montserrat_14, LV_PART_MAIN);
   lv_label_set_text(caption, "ANCHOR UP");
   lv_obj_align_to(caption, dist, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
@@ -2434,7 +2514,22 @@ struct AnchorTrackCtx {
   float bearing_rad = 0.f;
   float cur_m = 0.f;
   float max_m = 0.f;
+  std::string id;                        // widget id, keys the kept tail
 };
+
+// The swing tail outlives its widget for one rebuild: a theme change at
+// sunset rebuilds the layout, and a boat at anchor should not lose the
+// track it has drawn so far. Kept only while the geometry is unchanged.
+struct KeptTrack {
+  lv_point_precise_t pts[kTrackMax];
+  int head;
+  int count;
+  float cx, cy, plot_r;
+};
+static std::unordered_map<std::string, KeptTrack>& kept_tracks() {
+  static std::unordered_map<std::string, KeptTrack> m;
+  return m;
+}
 
 static bool anchor_track_watching(const AnchorTrackCtx* a) {
   return a->state_on || a->max_m > 0.f;
@@ -2483,7 +2578,7 @@ static void anchor_track_render(AnchorTrackCtx* a) {
     lv_obj_set_hidden(a->boat, true);
     lv_label_set_text(a->caption, "ANCHOR UP");
     lv_label_set_text(a->chain, "");
-    lv_obj_set_style_border_color(a->zone, lv_color_hex(0x30363d), LV_PART_MAIN);
+    lv_obj_set_style_border_color(a->zone, lv_color_hex(track_hex()), LV_PART_MAIN);
     a->count = 0;  // reset the tail when the anchor comes up
     anchor_track_redraw(a);
     return;
@@ -2494,7 +2589,7 @@ static void anchor_track_render(AnchorTrackCtx* a) {
   // warn margin, red once currentRadius exceeds maxRadius.
   uint32_t margin_color = a->max_m > 0.f
                               ? anchor_ring_color(a->cur_m, a->max_m)
-                              : 0x30363d;
+                              : track_hex();
   lv_obj_set_style_border_color(a->zone, lv_color_hex(margin_color),
                                 LV_PART_MAIN);
 
@@ -2592,7 +2687,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_align(zone, LV_ALIGN_CENTER, 0, 0);
   lv_obj_set_style_radius(zone, LV_RADIUS_CIRCLE, LV_PART_MAIN);
   lv_obj_set_style_bg_opa(zone, LV_OPA_TRANSP, LV_PART_MAIN);
-  lv_obj_set_style_border_color(zone, lv_color_hex(0x30363d), LV_PART_MAIN);
+  lv_obj_set_style_border_color(zone, lv_color_hex(track_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(zone, 2, LV_PART_MAIN);
   lv_obj_set_style_outline_width(zone, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(zone, 0, LV_PART_MAIN);
@@ -2605,7 +2700,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_set_size(mark, anchor_d, anchor_d);
   lv_obj_align(mark, LV_ALIGN_CENTER, 0, 0);
   lv_obj_set_style_radius(mark, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(mark, lv_color_hex(kMutedHex), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(mark, lv_color_hex(muted_hex()), LV_PART_MAIN);
   lv_obj_set_style_border_width(mark, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_width(mark, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(mark, 0, LV_PART_MAIN);
@@ -2620,6 +2715,19 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   a->plot_r = zone_side / 2.0f;
   a->boat_r = (side / 22.0f); if (a->boat_r < 3.f) a->boat_r = 3.f;
   a->track_hex = colors.fg;
+  a->id = spec["id"] | "";
+  if (!a->id.empty()) {
+    auto it = kept_tracks().find(a->id);
+    if (it != kept_tracks().end()) {
+      const KeptTrack& k = it->second;
+      if (k.cx == a->cx && k.cy == a->cy && k.plot_r == a->plot_r) {
+        memcpy(a->band_pts, k.pts, sizeof(a->band_pts));
+        a->head = k.head;
+        a->count = k.count;
+      }
+      kept_tracks().erase(it);
+    }
+  }
   a->dist_disp = parse_display(spec);
   if (a->dist_disp.unit[0] == '\0') {
     snprintf(a->dist_disp.unit, sizeof(a->dist_disp.unit), "m");
@@ -2649,9 +2757,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
 
   // Chain-out (maxRadius) label sitting on the top of the boundary ring.
   lv_obj_t* chain = lv_label_create(root);
-  lv_obj_set_style_text_color(chain, lv_color_hex(kMutedHex), LV_PART_MAIN);
+  lv_obj_set_style_text_color(chain, lv_color_hex(muted_hex()), LV_PART_MAIN);
   lv_obj_set_style_text_font(chain, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(chain, lv_color_hex(0x0d1117), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(chain, lv_color_hex(tile_hex()), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(chain, LV_OPA_COVER, LV_PART_MAIN);  // punch through the ring
   lv_obj_set_style_pad_hor(chain, 3, LV_PART_MAIN);
   lv_label_set_text(chain, "");
@@ -2661,7 +2769,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
 
   // Small current-radius readout at the bottom edge.
   lv_obj_t* caption = lv_label_create(root);
-  lv_obj_set_style_text_color(caption, lv_color_hex(kMutedHex), LV_PART_MAIN);
+  lv_obj_set_style_text_color(caption, lv_color_hex(muted_hex()), LV_PART_MAIN);
   lv_obj_set_style_text_font(caption, &lv_font_montserrat_14, LV_PART_MAIN);
   lv_label_set_text(caption, "ANCHOR UP");
   lv_obj_align(caption, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -2671,8 +2779,18 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   lv_obj_add_event_cb(
       root,
       [](lv_event_t* e) {
-        delete static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(
+        auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(
             static_cast<lv_obj_t*>(lv_event_get_target(e))));
+        if (a && !a->id.empty() && a->count > 0) {
+          KeptTrack& k = kept_tracks()[a->id];
+          memcpy(k.pts, a->band_pts, sizeof(k.pts));
+          k.head = a->head;
+          k.count = a->count;
+          k.cx = a->cx;
+          k.cy = a->cy;
+          k.plot_r = a->plot_r;
+        }
+        delete a;
       },
       LV_EVENT_DELETE, nullptr);
 
@@ -2804,12 +2922,12 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         switch (s) {
           case 2:  // listening
             lv_label_set_text(c->label, "LISTENING");
-            lv_obj_set_style_text_color(c->label, lv_color_hex(0x33cc66),
+            lv_obj_set_style_text_color(c->label, lv_color_hex(theme::state_color(0)),
                                         LV_PART_MAIN);
             break;
           case 0:  // disconnected
             lv_label_set_text(c->label, "\xE2\x80\xA6");  // …
-            lv_obj_set_style_text_color(c->label, lv_color_hex(0x888888),
+            lv_obj_set_style_text_color(c->label, lv_color_hex(muted_hex()),
                                         LV_PART_MAIN);
             break;
           default:  // idle / speaking — restore the widget's own label + fg

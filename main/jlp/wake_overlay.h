@@ -18,9 +18,12 @@ class WakeOverlay {
   void show();
   void hide();
   bool is_visible() const { return visible_; }
+  // Re-color from the active theme; init() and every theme change.
+  void restyle();
 
  private:
   lv_obj_t* root_ = nullptr;
+  lv_obj_t* lbl_ = nullptr;
   bool visible_ = false;
 };
 

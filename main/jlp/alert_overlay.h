@@ -49,6 +49,10 @@ class AlertOverlay {
    *  would sound. Only such a notification wakes a dimmed panel. */
   bool wants_attention(const Notification& n) const;
 
+  /** Re-color from the active theme. Called once from init() and after
+   *  every theme change. UI task. */
+  void restyle();
+
  private:
   void rebuild();
   const LevelPolicy* policy(NotState s) const;
@@ -62,6 +66,7 @@ class AlertOverlay {
   lv_obj_t* state_label_ = nullptr;
   lv_obj_t* msg_label_ = nullptr;
   lv_obj_t* ack_button_ = nullptr;
+  lv_obj_t* ack_lbl_ = nullptr;
   std::string current_path_;       // path-after-prefix shown right now
   // lv_tick when the overlay appeared or switched alarms; taps inside
   // the guard window after that are ignored (pop-under-finger).

@@ -5,7 +5,10 @@
 #include "esp_log.h"
 #include <string>
 
+#include "cockpit_hal/ui.h"
 #include "espos_sk.h"
+#include "layout/layout_manager.h"
+#include "theme.h"
 
 static const char* TAG = "jlp.sun";
 
@@ -27,7 +30,10 @@ void SunState::set_mode(const char* mode) {
   }
   if (state_ == next) return;
   state_ = next;
+  theme::g_sky = next == DayNight::Night ? theme::Sky::Night : theme::Sky::Day;
   ESP_LOGI(TAG, "mode=%s", mode);
+  // Called on the stream task; the rebuild is LVGL work.
+  cockpit_hal::ui::post([] { layout_manager().refresh_theme(); });
 }
 
 namespace {
