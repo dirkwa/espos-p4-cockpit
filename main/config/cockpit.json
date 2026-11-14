@@ -2,7 +2,7 @@
   "namespace": "cockpit",
   "version": 1,
   "title": "Cockpit",
-  "description": "Panel behaviour that is not part of a layout: brightness, idle dimming, the layout push port.",
+  "description": "Panel behaviour that is not part of a layout: brightness, theme, idle dimming, the layout push port.",
   "keys": [
     {
       "name": "brightness",
@@ -12,6 +12,14 @@
       "max": 100,
       "unit": "%",
       "title": "Backlight brightness"
+    },
+    {
+      "name": "theme",
+      "type": "string",
+      "enum": ["auto", "day", "dark", "night"],
+      "default": "auto",
+      "title": "Theme",
+      "description": "Panel colors. Auto uses the layout's theme, and switches between day and night with environment.mode."
     },
     {
       "name": "idle_s",

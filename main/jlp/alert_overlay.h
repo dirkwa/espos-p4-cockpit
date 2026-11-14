@@ -49,6 +49,11 @@ class AlertOverlay {
    *  would sound. Only such a notification wakes a dimmed panel. */
   bool wants_attention(const Notification& n) const;
 
+  // True while the modal covers the screen.
+  bool is_visible() const {
+    return root_ && !lv_obj_is_hidden(root_);
+  }
+
   /** Re-color from the active theme. Called once from init() and after
    *  every theme change. UI task. */
   void restyle();

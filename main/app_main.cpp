@@ -54,9 +54,11 @@
 #include "jlp/net/wake_discover.h"
 #include "jlp/net/zone_fetch.h"
 #include "jlp/notifications_registry.h"
+#include "jlp/settings_overlay.h"
 #include "jlp/status_overlay.h"
 #include "jlp/subject_registry.h"
 #include "jlp/sun_state.h"
+#include "jlp/theme.h"
 #include "jlp/wake_overlay.h"
 #include "jlp/zone_registry.h"
 
@@ -165,6 +167,15 @@ void poll_status_line() {
                          stalled ? "no frames for 30 s" : "", ESPOS_HEALTH_F_REBOOT_ON_ALARM);
 }
 
+// cockpit.theme, the panel's own choice; it wins over the layout's.
+jlp::theme::Mode configured_theme() {
+  char v[8] = "auto";
+  espos_config_get_str(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_THEME, v, sizeof(v), nullptr);
+  jlp::theme::Mode m = jlp::theme::Mode::Auto;
+  jlp::theme::parse_mode(v, &m);
+  return m;
+}
+
 // espos_start()'s before_network hook: everything the user should see and
 // hear before the radio comes up. Runs on the main task after log + config.
 esp_err_t panel_up(void*) {
@@ -187,6 +198,18 @@ esp_err_t panel_up(void*) {
   espos_config_subscribe(
       [](const char* ns, const char* key, void*) {
         if (strcmp(ns, ESPOS_CFG_NS_COCKPIT) != 0) return;
+        if (strcmp(key, ESPOS_CFG_COCKPIT_THEME) == 0) {
+          const jlp::theme::Mode m = configured_theme();
+          cockpit_hal::ui::post([m] {
+            jlp::theme::g_panel_choice = m;
+            jlp::layout_manager().refresh_theme();
+            // refresh_theme() does nothing when the shown palette stays the
+            // same (Auto on a day layout -> Day); the menu still has to
+            // mark the new choice.
+            jlp::settings_overlay().restyle();
+          });
+          return;
+        }
         if (strcmp(key, ESPOS_CFG_COCKPIT_BRIGHTNESS) != 0) return;
         int32_t pct = 95;
         espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_BRIGHTNESS, &pct);
@@ -255,6 +278,9 @@ esp_err_t panel_up(void*) {
   cockpit_hal::ui::post([] {
     char host[33] = "";
     espos_config_get_str(ESPOS_CFG_NS_WIFI, ESPOS_CFG_WIFI_HOSTNAME, host, sizeof(host), nullptr);
+    // Before the first build, so the stored layout comes up in the
+    // panel's chosen theme rather than switching after a second.
+    jlp::theme::g_panel_choice = configured_theme();
     jlp::overlay().init();
     jlp::overlay().set_hostname(host[0] ? host : "cockpit");
     jlp::overlay().set_sk("no network");   // events take it from here
@@ -296,6 +322,7 @@ esp_err_t panel_up(void*) {
     jlp::alert_overlay().init();
     jlp::mic_overlay().init();    // after alert_overlay: an alarm wins
     jlp::wake_overlay().init();   // after alert_overlay: z-order
+    jlp::settings_overlay().init();
     jlp::idle_dimmer().init();
     // Wake for an escalation the layout wants the operator to notice: a
     // level that is shown or sounds. Hidden, silent levels leave it dark.

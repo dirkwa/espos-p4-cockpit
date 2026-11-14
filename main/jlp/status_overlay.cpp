@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <initializer_list>
 
+#include "settings_overlay.h"
 #include "theme.h"
 
 namespace jlp {
@@ -38,6 +39,23 @@ void StatusOverlay::init() {
   lbl_sk_ = make_label(strip_, "sk:?");
   lbl_n2k_ = make_label(strip_, "n2k:?");
   lbl_sys_ = make_label(strip_, "up 0s heap ?");
+
+  // The settings menu. The strip is only 28 px tall, so the button is wide
+  // instead; holding a finger on the layout opens the menu too.
+  gear_ = lv_button_create(strip_);
+  lv_obj_set_size(gear_, 64, 20);
+  lv_obj_set_style_bg_opa(gear_, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(gear_, 0, LV_PART_MAIN);
+  lv_obj_set_style_outline_width(gear_, 0, LV_PART_MAIN);
+  lv_obj_set_style_border_width(gear_, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(gear_, 0, LV_PART_MAIN);
+  gear_lbl_ = lv_label_create(gear_);
+  lv_obj_set_style_text_font(gear_lbl_, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_label_set_text(gear_lbl_, LV_SYMBOL_SETTINGS);
+  lv_obj_center(gear_lbl_);
+  lv_obj_add_event_cb(
+      gear_, [](lv_event_t*) { settings_overlay().open(); }, LV_EVENT_CLICKED,
+      nullptr);
 
   // The rest of the screen — future layouts live here.
   content_root_ = lv_obj_create(scr);
@@ -83,6 +101,7 @@ void StatusOverlay::restyle() {
   for (lv_obj_t* l : {lbl_host_, lbl_wifi_, lbl_sk_, lbl_n2k_, lbl_sys_}) {
     lv_obj_set_style_text_color(l, lv_color_hex(p.fg), LV_PART_MAIN);
   }
+  lv_obj_set_style_text_color(gear_lbl_, lv_color_hex(p.muted), LV_PART_MAIN);
   const uint32_t lost = theme::state_color(3);
   lv_obj_set_style_bg_color(sk_lost_, lv_color_hex(lost), LV_PART_MAIN);
   lv_obj_set_style_text_color(sk_lost_lbl_, lv_color_hex(theme::ink_on(lost)),

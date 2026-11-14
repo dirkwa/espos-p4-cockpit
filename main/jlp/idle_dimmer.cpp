@@ -44,9 +44,21 @@ void IdleDimmer::set_on_brightness(uint8_t pct) {
 }
 
 void IdleDimmer::init() {
+  // A press, not inactivity time, ends "Screen off": the tap that chose it
+  // was already released when sleep_now() ran, so any press is a new one,
+  // however soon it follows.
+  if (lv_indev_t* indev = lv_indev_get_next(nullptr)) {
+    lv_indev_add_event_cb(
+        indev,
+        [](lv_event_t*) {
+          if (idle_dimmer().manual_off_) idle_dimmer().wake();
+        },
+        LV_EVENT_PRESSED, nullptr);
+  }
   // LVGL tracks input inactivity automatically. Poll on a 1 Hz cadence
   // — finer resolution is wasteful for human-scale timeouts.
   cockpit_hal::ui::every(1000, [this]() {
+    if (manual_off_) return;
     if (idle_timeout_sec_ == 0) {
       if (!on_) set_on(true);
       return;
@@ -80,8 +92,16 @@ void IdleDimmer::configure(uint32_t idle_timeout_sec, uint8_t dim_pct) {
 }
 
 void IdleDimmer::wake() {
+  manual_off_ = false;
   lv_display_trigger_activity(NULL);
   if (!on_) set_on(true);
+}
+
+void IdleDimmer::sleep_now() {
+  manual_off_ = true;
+  set_on(false);
+  // set_on(false) leaves the idle level, which may be a glow; off means off.
+  if (auto* d = cockpit_hal::ui::display()) d->set_brightness(0);
 }
 
 IdleDimmer& idle_dimmer() {

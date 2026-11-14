@@ -15,6 +15,7 @@
 #include "../status_overlay.h"
 #include "../subject_registry.h"
 #include "../theme.h"
+#include "../settings_overlay.h"
 #include "../wake_overlay.h"
 #include "../widgets/widget_factory.h"
 #include "store.h"
@@ -350,6 +351,7 @@ void LayoutManager::restyle_overlays() {
   alert_overlay().restyle();
   mic_overlay().restyle();
   wake_overlay().restyle();
+  settings_overlay().restyle();
 }
 
 ApplyResult LayoutManager::apply_impl(const std::string& json, ApplySource src,
