@@ -1,11 +1,15 @@
 #include "subject_registry.h"
 
 #include <ArduinoJson.h>
+#include <algorithm>
+#include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk.h"
 
 #include "zone_registry.h"
@@ -27,14 +31,47 @@ void on_update(const espos_sk_update_t* u, void* arg) {
   auto* entry = static_cast<SubjectEntry*>(arg);
   if (u->value_json) {
     std::string v(u->value_json);
-    cockpit_hal::ui::post([entry, v = std::move(v)]() {
+    // Taken here, on the stream task, not when the UI task gets to it: the
+    // REST seed compares against when the value arrived.
+    const int64_t rx_us = esp_timer_get_time();
+    cockpit_hal::ui::post([entry, v = std::move(v), rx_us]() {
       lv_subject_t* s = entry->subject;
+      // Any delta, null included, is newer than zone_fetch's REST seed and
+      // makes it skip this path. Only a dropped value does not (a non-finite
+      // float, or text that is no number on a numeric path): the seed may
+      // still be the better reading.
+      const bool is_null = v == "null";
+      bool fresh = true;
       switch (entry->kind) {
         case SubjectKind::Float:
-          if (v != "null") lv_subject_set_float(s, strtof(v.c_str(), nullptr));
+          if (!is_null) {
+            // strtof takes "inf", "nan" and 1e999 (+Inf); no observer
+            // (bar, arc, zone match, label) is ready for a non-finite value.
+            // A JSON string or other text converts to 0 with no characters
+            // consumed; that is no reading either.
+            char* end = nullptr;
+            const float f = strtof(v.c_str(), &end);
+            if (end != v.c_str() && std::isfinite(f)) {
+              lv_subject_set_float(s, f);
+            } else {
+              fresh = false;
+            }
+          }
           break;
         case SubjectKind::Int:
-          if (v != "null") lv_subject_set_int(s, (int)strtol(v.c_str(), nullptr, 10));
+          if (!is_null) {
+            // Read as a JSON number, not just its leading integer digits:
+            // 1e3 is 1000 and 1e-5 is 0, as the REST seed converts them. A
+            // fraction is cut toward zero.
+            char* end = nullptr;
+            const double n = strtod(v.c_str(), &end);
+            if (end != v.c_str() && std::isfinite(n)) {
+              lv_subject_set_int(
+                  s, (int)std::clamp(n, (double)INT_MIN, (double)INT_MAX));
+            } else {
+              fresh = false;
+            }
+          }
           break;
         case SubjectKind::Bool:
           lv_subject_set_int(s, (v == "true" || v == "1") ? 1 : 0);
@@ -61,6 +98,7 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           break;
         }
       }
+      if (fresh) entry->stream_rx_us = rx_us;
     });
   } else if (u->meta_json) {
     // raw meta object {units, description, zones, ...}: ZoneRegistry parses it
@@ -176,6 +214,20 @@ std::optional<SubjectKind> SubjectRegistry::kind_of(
   return it->second.entry->kind;
 }
 
+bool SubjectRegistry::accept_seed(const std::string& path, int64_t requested_us) {
+  auto it = map_.find(path);
+  if (it == map_.end()) return false;
+  SubjectEntry& e = *it->second.entry;
+  if (e.stream_rx_us > requested_us || e.seed_req_us > requested_us) return false;
+  e.seed_req_us = requested_us;
+  return true;
+}
+
+int64_t SubjectRegistry::stream_rx_us(const std::string& path) const {
+  auto it = map_.find(path);
+  return it == map_.end() ? 0 : it->second.entry->stream_rx_us;
+}
+
 std::vector<std::string> SubjectRegistry::paths() const {
   std::vector<std::string> out;
   out.reserve(map_.size());
@@ -197,6 +249,10 @@ void SubjectRegistry::garbage_collect(
     if (!live && slot.sub_handle > 0) {
       espos_sk_unsubscribe(slot.sub_handle);
       slot.sub_handle = 0;
+      // Its value goes stale from here; a later layout's REST seed may
+      // replace it again.
+      slot.entry->stream_rx_us = 0;
+      slot.entry->seed_req_us = 0;
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
     }

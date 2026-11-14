@@ -28,6 +28,15 @@ struct SubjectEntry {
   // created for LV_SUBJECT_TYPE_STRING has no buffer of its own.
   char str_buf[64];
   char str_prev[64];
+  // esp_timer time (us) at which the stream task received the last delta
+  // (null included) for this path, 0 for none since it was (re)subscribed.
+  // zone_fetch skips its REST seed when this is later than the moment its
+  // GET started. UI task only.
+  int64_t stream_rx_us = 0;
+  // When the GET of the last applied REST seed started, 0 for none. Two
+  // fetches can overlap (boot layout and stream up); the older answer must
+  // not replace the newer one. UI task only.
+  int64_t seed_req_us = 0;
 };
 
 // Maps a widget bind -> lv_subject_t. Subjects are created lazily by
@@ -51,6 +60,14 @@ class SubjectRegistry {
    *  the right typed setter when seeding a freshly-bound subject
    *  with SK's REST-fetched initial value. */
   std::optional<SubjectKind> kind_of(const std::string& path) const;
+  /** When the stream last delivered a delta for `path` (esp_timer us),
+   *  0 if none since it was (re)subscribed or the path is unknown. */
+  int64_t stream_rx_us(const std::string& path) const;
+  /** Whether a REST seed whose GET started at `requested_us` may be
+   *  applied: not when a stream delta or an applied seed for the path is
+   *  newer. Records it as the applied seed when it may. False for an
+   *  unknown path. UI task only. */
+  bool accept_seed(const std::string& path, int64_t requested_us);
   std::vector<std::string> paths() const;
 
   // Unsubscribe paths not in `live_paths` (subjects are kept).
