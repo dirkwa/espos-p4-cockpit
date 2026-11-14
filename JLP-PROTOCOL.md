@@ -200,6 +200,21 @@ dark fill; alarm and emergency still fill the tile. Per-widget
 the one on screen now (`day`, `dark` or `night`). A device without them
 ignores `theme.mode`.
 
+The panel's own setting `cockpit.theme` (`auto`, `day`, `dark` or `night`,
+in the espOS config API and web UI) wins over `theme.mode` when it is not
+`auto`, so a crew member can switch to night at the helm whatever layout is
+loaded.
+
+#### Settings menu
+
+The gear at the right end of the status strip opens the panel's settings:
+backlight brightness, the theme and screen off. Holding a finger still
+for 3 s anywhere but on a control (button, slider, switch, image) opens
+it too, which also works when a layout hides the strip; the held press is
+dropped, so nothing under the finger fires. The menu writes `cockpit.brightness` and `cockpit.theme` through the
+config API and closes itself after 30 s without a touch. Screen off turns the
+backlight fully off until the next tap, a layout push or an alarm.
+
 ### Screen object
 
 | Field     | Type    | Required | Notes                                |

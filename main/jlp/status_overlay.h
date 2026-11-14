@@ -52,6 +52,8 @@ class StatusOverlay {
   lv_obj_t* lbl_sk_ = nullptr;
   lv_obj_t* lbl_n2k_ = nullptr;
   lv_obj_t* lbl_sys_ = nullptr;
+  lv_obj_t* gear_ = nullptr;          // opens the settings menu
+  lv_obj_t* gear_lbl_ = nullptr;
   lv_obj_t* sk_lost_ = nullptr;       // screen-level connection-lost banner
   lv_obj_t* sk_lost_lbl_ = nullptr;   // its text
   char sk_server_[40] = "";           // "host:port" for the banner text
