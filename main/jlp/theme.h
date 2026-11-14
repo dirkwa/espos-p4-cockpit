@@ -66,7 +66,8 @@ inline constexpr Palette kNight{
     {0x8f2219, 0xa8261d, 0xc22a1f, 0xff3b30, 0xff6a5c},
     true};
 
-// Written on the SignalK stream task, read on the UI task.
+// Set on the UI task between builds (see sun_state.cpp); atomic so other
+// tasks may read it.
 inline std::atomic<Sky> g_sky{Sky::Unknown};
 // UI task only.
 inline Mode g_layout_mode = Mode::Auto;     // layout `theme.mode`

@@ -2517,17 +2517,16 @@ struct AnchorTrackCtx {
   std::string id;                        // widget id, keys the kept tail
 };
 
-// The swing tail outlives its widget for one rebuild: a theme change at
-// sunset rebuilds the layout, and a boat at anchor should not lose the
-// track it has drawn so far. Kept only while the geometry is unchanged.
-struct KeptTrack {
-  lv_point_precise_t pts[kTrackMax];
-  int head;
-  int count;
-  float cx, cy, plot_r;
-};
-static std::unordered_map<std::string, KeptTrack>& kept_tracks() {
-  static std::unordered_map<std::string, KeptTrack> m;
+// The swing tail survives a rebuild: a theme change at sunset rebuilds
+// the layout, and a boat at anchor should not lose the track it has drawn
+// so far. The new tree is built while the old one is still alive, so the
+// tail is copied from the live widget with the same id, and only while
+// the geometry is unchanged.
+// A list per id, because a failed build's widgets come and go while the
+// shown ones stay.
+static std::unordered_map<std::string, std::vector<AnchorTrackCtx*>>&
+live_tracks() {
+  static std::unordered_map<std::string, std::vector<AnchorTrackCtx*>> m;
   return m;
 }
 
@@ -2716,18 +2715,24 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   a->boat_r = (side / 22.0f); if (a->boat_r < 3.f) a->boat_r = 3.f;
   a->track_hex = colors.fg;
   a->id = spec["id"] | "";
+  // Held aside until the subjects' first callbacks have run: with the
+  // anchor state not known yet they would clear it.
+  const AnchorTrackCtx* prev = nullptr;
   if (!a->id.empty()) {
-    auto it = kept_tracks().find(a->id);
-    if (it != kept_tracks().end()) {
-      const KeptTrack& k = it->second;
-      if (k.cx == a->cx && k.cy == a->cy && k.plot_r == a->plot_r) {
-        memcpy(a->band_pts, k.pts, sizeof(a->band_pts));
-        a->head = k.head;
-        a->count = k.count;
-      }
-      kept_tracks().erase(it);
+    auto it = live_tracks().find(a->id);
+    if (it != live_tracks().end() && !it->second.empty()) {
+      const AnchorTrackCtx* p = it->second.front();
+      if (p->cx == a->cx && p->cy == a->cy && p->plot_r == a->plot_r) prev = p;
     }
   }
+  lv_point_precise_t kept_pts[kTrackMax];
+  int kept_head = 0, kept_count = 0;
+  if (prev && prev->count > 0) {
+    memcpy(kept_pts, prev->band_pts, sizeof(kept_pts));
+    kept_head = prev->head;
+    kept_count = prev->count;
+  }
+  if (!a->id.empty()) live_tracks()[a->id].push_back(a);
   a->dist_disp = parse_display(spec);
   if (a->dist_disp.unit[0] == '\0') {
     snprintf(a->dist_disp.unit, sizeof(a->dist_disp.unit), "m");
@@ -2781,14 +2786,13 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_event_t* e) {
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(
             static_cast<lv_obj_t*>(lv_event_get_target(e))));
-        if (a && !a->id.empty() && a->count > 0) {
-          KeptTrack& k = kept_tracks()[a->id];
-          memcpy(k.pts, a->band_pts, sizeof(k.pts));
-          k.head = a->head;
-          k.count = a->count;
-          k.cx = a->cx;
-          k.cy = a->cy;
-          k.plot_r = a->plot_r;
+        if (a && !a->id.empty()) {
+          auto it = live_tracks().find(a->id);
+          if (it != live_tracks().end()) {
+            auto& v = it->second;
+            v.erase(std::remove(v.begin(), v.end(), a), v.end());
+            if (v.empty()) live_tracks().erase(it);
+          }
         }
         delete a;
       },
@@ -2838,6 +2842,11 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       },
       root, nullptr);
 
+  if (kept_count > 0) {
+    memcpy(a->band_pts, kept_pts, sizeof(a->band_pts));
+    a->head = kept_head;
+    a->count = kept_count;
+  }
   anchor_track_render(a);
   return root;
 }
