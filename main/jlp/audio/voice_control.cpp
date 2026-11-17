@@ -68,7 +68,7 @@ int VoiceControl::state_code() const {
 }
 
 void VoiceControl::set_speaker_muted(bool muted) {
-  speaker_muted_.store(muted);
+  if (!speaker_muted_.exchange(muted) && muted) ++speaker_mutes_;
   // set_enabled(false) holds the amp disabled so a quiet helm stays quiet;
   // set_enabled(true) re-arms it. Also mute the chime so a mute is total.
   if (audio_) audio_->set_enabled(!muted);

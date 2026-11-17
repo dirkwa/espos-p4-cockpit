@@ -1,10 +1,14 @@
 #include "alert_overlay.h"
 
+#include <iterator>
+
 #include "esp_log.h"
+#include "cockpit_hal/ui.h"
 #include "audio/chime.h"
+#include "audio/voice_control.h"
 #include "net/sk_put.h"
 #include "notifications_registry.h"
-#include "zone_registry.h"  // color_for_state
+#include "theme.h"
 
 static const char* TAG = "jlp.alert";
 
@@ -13,17 +17,16 @@ namespace jlp {
 namespace {
 
 uint32_t color_for_not_state(NotState s) {
-  // Reuse the maritime palette from ZoneState. The mapping is
-  // direct since NotState and ZoneState use the same names.
+  // Same escalation as the zones, from the active theme.
   switch (s) {
     case NotState::Nominal:
-    case NotState::Normal:    return 0x3fb950;  // green (shouldn't show)
-    case NotState::Alert:     return 0xd29922;  // yellow
-    case NotState::Warn:      return 0xdb6d28;  // orange
-    case NotState::Alarm:     return 0xf85149;  // red
-    case NotState::Emergency: return 0xa371f7;  // purple
+    case NotState::Normal:    return theme::state_color(0);  // shouldn't show
+    case NotState::Alert:     return theme::state_color(1);
+    case NotState::Warn:      return theme::state_color(2);
+    case NotState::Alarm:     return theme::state_color(3);
+    case NotState::Emergency: return theme::state_color(4);
   }
-  return 0xf85149;
+  return theme::state_color(3);
 }
 
 }  // namespace
@@ -50,7 +53,6 @@ void AlertOverlay::init() {
   // ACK button's own area, so a stray tap can't reach a widget beneath it.
   lv_obj_set_size(root_, LV_HOR_RES, LV_VER_RES / 2);
   lv_obj_align(root_, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  lv_obj_set_style_bg_color(root_, lv_color_hex(0x0d1117), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root_, LV_OPA_90, LV_PART_MAIN);
   lv_obj_set_style_border_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
@@ -62,24 +64,18 @@ void AlertOverlay::init() {
   lv_obj_move_foreground(root_);
 
   state_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(state_label_, lv_color_hex(0xf85149),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(state_label_, &lv_font_montserrat_28,
                              LV_PART_MAIN);
   lv_label_set_text(state_label_, "ALARM");
   lv_obj_align(state_label_, LV_ALIGN_TOP_MID, 0, 0);
 
   path_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(path_label_, lv_color_hex(0x8b949e),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(path_label_, &lv_font_montserrat_14,
                              LV_PART_MAIN);
   lv_label_set_text(path_label_, "");
   lv_obj_align_to(path_label_, state_label_, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
 
   msg_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_color(msg_label_, lv_color_hex(0xe6edf3),
-                              LV_PART_MAIN);
   lv_obj_set_style_text_font(msg_label_, &lv_font_montserrat_20,
                              LV_PART_MAIN);
   lv_label_set_text(msg_label_, "");
@@ -97,10 +93,9 @@ void AlertOverlay::init() {
   ack_button_ = lv_button_create(root_);
   lv_obj_set_size(ack_button_, 220, 80);
   lv_obj_align(ack_button_, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_obj_set_style_bg_color(ack_button_, lv_color_hex(0x3fb950), LV_PART_MAIN);
   lv_obj_set_style_radius(ack_button_, 8, LV_PART_MAIN);
-  lv_obj_t* ack_lbl = lv_label_create(ack_button_);
-  lv_obj_set_style_text_color(ack_lbl, lv_color_hex(0x0d1117), LV_PART_MAIN);
+  ack_lbl_ = lv_label_create(ack_button_);
+  lv_obj_t* ack_lbl = ack_lbl_;
   lv_obj_set_style_text_font(ack_lbl, &lv_font_montserrat_28, LV_PART_MAIN);
   lv_label_set_text(ack_lbl, "ACK");
   lv_obj_center(ack_lbl);
@@ -130,8 +125,8 @@ void AlertOverlay::init() {
         // re-assert: for a bus-backed alarm our state=normal delta just
         // triggers a clear -> re-raise flap network-wide (see
         // NotificationsRegistry::acknowledge).
-        if (notifications().acknowledge(path)) {
-          put_notification_ack(path);
+        if (notifications().acknowledge(path) && !put_notification_ack(path)) {
+          notifications().forget_self_clear(path);
         }
       },
       LV_EVENT_CLICKED, nullptr);
@@ -152,22 +147,124 @@ void AlertOverlay::init() {
     // bus-backed alarm flaps back to its acked severity after every
     // ack-clear echo, and re-beeping an alarm the operator just
     // silenced is the one thing an ack must reliably prevent.
+    // Whether the escalated level sounds is the layout's choice per level
+    // (notifications.levels): off, as the source's `method` asks, or always.
     if (enabled_ && notifications().last_change_was_escalation() &&
-        notifications().last_escalation_wants_sound() &&
         !notifications().is_acknowledged(notifications().last_changed_path())) {
-      const Notification* n = notifications().most_severe();
-      if (n && n->state >= min_state_) chime().play(n->state);
+      const Notification* n = notifications().find(notifications().last_changed_path());
+      if (n && sounds(*n)) play(*n);
     }
     rebuild();
   });
 
+  restyle();
+
+  // Repeats for levels with repeat_s, until acked, cleared or muted.
+  cockpit_hal::ui::every(1000, [this]() { repeat_tick(); });
+
   ESP_LOGI(TAG, "alert overlay initialised");
 }
 
-void AlertOverlay::configure(bool enabled, NotState min_state) {
+LevelPolicies policies_from_min_state(NotState min_state) {
+  LevelPolicies p{};
+  for (size_t i = 0; i < p.size(); ++i) {
+    const auto s = static_cast<NotState>(static_cast<int>(NotState::Alert) + static_cast<int>(i));
+    p[i].show = s >= min_state;
+    p[i].sound = s >= min_state ? SoundPolicy::Source : SoundPolicy::Off;
+  }
+  return p;
+}
+
+void AlertOverlay::configure(bool enabled, const LevelPolicies& levels) {
   enabled_ = enabled;
-  min_state_ = min_state;
+  levels_ = levels;
+  show_mask_ = 0;
+  for (size_t i = 0; i < levels_.size(); ++i) {
+    if (levels_[i].show) {
+      show_mask_ |= static_cast<uint8_t>(1u << (static_cast<unsigned>(NotState::Alert) + i));
+    }
+  }
   rebuild();
+}
+
+const LevelPolicy* AlertOverlay::policy(NotState s) const {
+  if (s < NotState::Alert) return nullptr;  // nominal / normal never alert
+  return &levels_[static_cast<size_t>(s) - static_cast<size_t>(NotState::Alert)];
+}
+
+bool AlertOverlay::sounds(const Notification& n) const {
+  const LevelPolicy* p = policy(n.state);
+  if (!p) return false;
+  return p->sound == SoundPolicy::Always ||
+         (p->sound == SoundPolicy::Source && n.wants_sound);
+}
+
+// The chime is silent while the panel is muted or the speaker is off.
+static bool silenced() { return chime().muted() || voice().speaker_muted(); }
+
+bool AlertOverlay::wants_attention(const Notification& n) const {
+  const LevelPolicy* p = policy(n.state);
+  // A hidden level that would only chime has nothing to offer a muted
+  // panel: waking it would light an empty screen.
+  return enabled_ && p != nullptr && (p->show || (sounds(n) && !silenced()));
+}
+
+// Drops the repeat state when mute was switched on since the last look,
+// even if it is off again by now. Called before a chime is recorded too,
+// so an escalation right after unmuting keeps its repeats.
+void AlertOverlay::sync_mutes() {
+  // Either counter moving means a mute was switched on since the last look.
+  const uint32_t mutes = chime().mutes() + voice().speaker_mutes();
+  if (mutes == mutes_seen_) return;
+  mutes_seen_ = mutes;
+  last_chime_.clear();
+}
+
+void AlertOverlay::play(const Notification& n) {
+  if (silenced()) return;
+  sync_mutes();
+  chime().play(n.state);
+  last_chime_[n.path] = lv_tick_get();
+}
+
+void AlertOverlay::repeat_tick() {
+  if (!enabled_) return;
+  // Mute ends the repeats; unmuting does not restart them, the next
+  // escalation does.
+  sync_mutes();
+  if (silenced()) {
+    last_chime_.clear();
+    return;
+  }
+  // Forget paths that are no longer pending (acked, cleared, gone), so a
+  // later alarm on the same path starts its own count.
+  for (auto it = last_chime_.begin(); it != last_chime_.end();) {
+    const Notification* n = notifications().find(it->first);
+    const bool pending = n && n->state >= NotState::Alert &&
+                         !notifications().is_acknowledged(it->first);
+    it = pending ? std::next(it) : last_chime_.erase(it);
+  }
+  // One repeat at a time, since clips from several at once would only
+  // queue up: the due one that is most overdue, the most severe on a tie.
+  // Picking by severity alone would let a pending emergency with a short
+  // interval starve every other level's repeat.
+  const Notification* best = nullptr;
+  uint32_t best_overdue = 0;
+  for (const auto& kv : last_chime_) {
+    const Notification* n = notifications().find(kv.first);
+    const LevelPolicy* p = n != nullptr ? policy(n->state) : nullptr;
+    if (p == nullptr || p->repeat_s == 0 || !sounds(*n)) continue;
+    const uint32_t elapsed = lv_tick_elaps(kv.second);
+    const uint32_t interval = p->repeat_s * 1000u;
+    if (elapsed < interval) continue;
+    const uint32_t overdue = elapsed - interval;
+    if (best == nullptr || overdue > best_overdue ||
+        (overdue == best_overdue && n->state > best->state)) {
+      best = n;
+      best_overdue = overdue;
+    }
+  }
+  if (best != nullptr) play(*best);
 }
 
 void AlertOverlay::rebuild() {
@@ -178,8 +275,8 @@ void AlertOverlay::rebuild() {
     current_path_.clear();
     return;
   }
-  const Notification* n = notifications().most_severe();
-  if (!n || n->state < min_state_) {
+  const Notification* n = notifications().most_severe(show_mask_);
+  if (!n) {
     lv_obj_set_hidden(root_, true);
     current_path_.clear();
     return;
@@ -199,6 +296,20 @@ void AlertOverlay::rebuild() {
   lv_label_set_text(msg_label_, n->message.empty() ? "(no message)"
                                                    : n->message.c_str());
   lv_obj_set_hidden(root_, false);
+}
+
+void AlertOverlay::restyle() {
+  if (!root_) return;
+  const theme::Palette& p = theme::palette();
+  lv_obj_set_style_bg_color(root_, lv_color_hex(p.screen), LV_PART_MAIN);
+  lv_obj_set_style_text_color(state_label_,
+                              lv_color_hex(theme::state_color(3)), LV_PART_MAIN);
+  lv_obj_set_style_text_color(path_label_, lv_color_hex(p.muted), LV_PART_MAIN);
+  lv_obj_set_style_text_color(msg_label_, lv_color_hex(p.fg), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(ack_button_, lv_color_hex(p.accent), LV_PART_MAIN);
+  lv_obj_set_style_text_color(ack_lbl_, lv_color_hex(p.on_accent),
+                              LV_PART_MAIN);
+  if (!lv_obj_is_hidden(root_)) rebuild();
 }
 
 AlertOverlay& alert_overlay() {

@@ -1,8 +1,11 @@
 #include "mic_overlay.h"
 
+#include <initializer_list>
+
 #include "audio/voice_control.h"
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "theme.h"
 
 static const char* TAG = "jlp.mic_ov";
 
@@ -11,6 +14,18 @@ namespace {
 // Big enough to read across a cockpit, small enough not to hide a gauge.
 constexpr int kSize = 132;
 constexpr int kMargin = 24;
+
+// Blue by day and on the dark theme; red at night, where a blue badge
+// would light up the cockpit.
+struct MicColors {
+  uint32_t bg, ink, ring_bright, ring_dim;
+};
+MicColors mic_colors() {
+  if (theme::palette().mode == theme::Mode::Night) {
+    return {0x120303, 0xe0322b, 0xff3b30, 0x8a1f1a};
+  }
+  return {0x10307a, 0xe6edf3, 0x9ed0ff, 0x2b6cb0};
+}
 }  // namespace
 
 void MicOverlay::init() {
@@ -20,10 +35,8 @@ void MicOverlay::init() {
   // Top-right: the helm's status corner, and clear of the notification
   // list which grows from the left.
   lv_obj_align(root_, LV_ALIGN_TOP_RIGHT, -kMargin, kMargin);
-  lv_obj_set_style_bg_color(root_, lv_color_hex(0x10307a), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(root_, LV_OPA_90, LV_PART_MAIN);
   lv_obj_set_style_radius(root_, kSize / 2, LV_PART_MAIN);
-  lv_obj_set_style_border_color(root_, lv_color_hex(0x63b3ff), LV_PART_MAIN);
   lv_obj_set_style_border_width(root_, 4, LV_PART_MAIN);
   lv_obj_set_style_outline_width(root_, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(root_, 0, LV_PART_MAIN);
@@ -45,6 +58,7 @@ void MicOverlay::init() {
     lv_obj_set_clickable(o, false);
   };
 
+  // Colors are set by restyle(); these only seed the shapes.
   constexpr uint32_t kInk = 0xe6edf3;  // the mic itself
   constexpr uint32_t kBg = 0x10307a;   // overlay background, for cut-outs
   constexpr int kCapW = 46;
@@ -99,6 +113,8 @@ void MicOverlay::init() {
   //
   // ui::every, not lv_timer_create: the house helper takes the LVGL lock the
   // rest of the UI code relies on.
+  restyle();
+
   cockpit_hal::ui::every(100, [] {
     mic_overlay().set_visible(voice().state_code() == 2);  // 2 = listening
   });
@@ -126,8 +142,25 @@ void MicOverlay::set_visible(bool on) {
   // badge is easy to mistake for a stuck overlay.
   pulse_ = (uint8_t)((pulse_ + 1) % 20);
   const bool bright = pulse_ < 10;
+  const MicColors c = mic_colors();
   lv_obj_set_style_border_color(
-      root_, lv_color_hex(bright ? 0x9ed0ff : 0x2b6cb0), LV_PART_MAIN);
+      root_, lv_color_hex(bright ? c.ring_bright : c.ring_dim), LV_PART_MAIN);
+}
+
+void MicOverlay::restyle() {
+  if (!root_) return;
+  const MicColors c = mic_colors();
+  lv_obj_set_style_bg_color(root_, lv_color_hex(c.bg), LV_PART_MAIN);
+  lv_obj_set_style_border_color(root_, lv_color_hex(c.ring_dim), LV_PART_MAIN);
+  for (lv_obj_t* o : {base_, stem_, yoke_, capsule_}) {
+    lv_obj_set_style_bg_color(o, lv_color_hex(c.ink), LV_PART_MAIN);
+  }
+  // The cut-outs fake holes by painting the overlay background.
+  lv_obj_set_style_bg_color(yoke_cut_, lv_color_hex(c.bg), LV_PART_MAIN);
+  for (uint32_t i = 0; i < lv_obj_get_child_count(capsule_); i++) {
+    lv_obj_set_style_bg_color(lv_obj_get_child(capsule_, i), lv_color_hex(c.bg),
+                              LV_PART_MAIN);
+  }
 }
 
 MicOverlay& mic_overlay() {

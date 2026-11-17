@@ -13,6 +13,8 @@ class MicOverlay {
   void init();
   // Public for the poll timer in init().
   void set_visible(bool on);
+  // Re-color from the active theme; init() and every theme change.
+  void restyle();
 
  private:
   lv_obj_t* root_ = nullptr;

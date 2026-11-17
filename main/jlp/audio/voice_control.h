@@ -47,6 +47,9 @@ class VoiceControl {
   // also what /hello publishes as audio_state.speaker_muted.
   void set_speaker_muted(bool muted);
   bool speaker_muted() const { return speaker_muted_.load(); }
+  // Counts the times the speaker was switched off, so the alert overlay
+  // also sees an off-and-on between two of its repeat ticks.
+  uint32_t speaker_mutes() const { return speaker_mutes_.load(); }
 
   // Output volume 0-100 (applied at the codec). get_volume returns the last
   // set value (or a default) for a slider's initial position.
@@ -78,6 +81,7 @@ class VoiceControl {
   // mic_muted_ always was. Relaxed ordering is enough: each is an independent
   // scalar and no reader infers anything from the order of the others.
   std::atomic<bool> speaker_muted_{false};
+  std::atomic<uint32_t> speaker_mutes_{0};
   std::atomic<bool> mic_muted_{false};
   std::atomic<uint8_t> volume_{50};  // matches WaveshareAudio's default
 };

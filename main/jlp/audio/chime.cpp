@@ -23,7 +23,7 @@ void Chime::init(espos_audio::AudioDriver* audio) {
 }
 
 void Chime::set_muted(bool m) {
-  muted_ = m;
+  if (!muted_.exchange(m) && m) ++mutes_;
   store_flag_set(kChimeMutedKey, m);
 }
 

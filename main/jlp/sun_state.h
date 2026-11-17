@@ -2,13 +2,16 @@
 
 #include <stdint.h>
 
+#include <atomic>
+
 namespace jlp {
 
 /** Day / night classifier driven by SignalK `environment.mode`
  *  ("day" / "night"), as published by signalk-espos-manager from the
  *  Sun's altitude (@openwaters/almanac): day from sunrise to sunset.
  *  signalk-derived-data publishes the same path and is accepted too.
- *  Used by the idle dimmer so the panel only goes dark at night.
+ *  Used by the idle dimmer so the panel only goes dark at night, and by
+ *  the panel theme, whose auto mode switches to night red at sunset.
  *
  *  Fail-safe behaviour: until SK has delivered a value, classify as
  *  Day so the helm stays bright. Dimming while the operator needs the
@@ -35,7 +38,8 @@ class SunState {
   void set_mode(const char* mode);
 
  private:
-  DayNight state_ = DayNight::Unknown;
+  // Written on the SignalK stream task, read from the UI task.
+  std::atomic<DayNight> state_{DayNight::Unknown};
 };
 
 SunState& sun_state();

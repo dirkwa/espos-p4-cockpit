@@ -32,7 +32,7 @@ Capability descriptor. Always returns 200 with a JSON body:
   "name": "Main helm",
   "hostname": "p4-cockpit",
   "firmware": "p4-cockpit-jlp-1.0.1",
-  "display": { "w": 1024, "h": 600, "tab_strip": ["fixed", "overlay-bottom"] },
+  "display": { "w": 1024, "h": 600, "tab_strip": ["fixed", "overlay-bottom"], "themes": ["auto","day","dark","night"], "theme": "day" },
   "widgets": {
     "label":  { "fields": ["x","y","w","h","label","bind","display"] },
     "toggle": { "fields": ["x","y","w","h","label","bind"] },
@@ -66,7 +66,7 @@ Apply a layout JSON. Request body: a JSON document conforming to the schema belo
 
 The device parses, validates, builds the LVGL tree under a hidden staging parent, then atomically swaps it in. If parse, validate or build fails, the prior layout stays live — **the screen never blanks** — and the device returns a non-200 with an error body. On success the layout is persisted (LittleFS on the reference firmware) so it survives reboot.
 
-Synchronous: the device replies only after the swap completes (typically <1s; absolute upper bound 10s before timing out).
+Synchronous: on success the device replies after the swap completes, typically in under 1 s.
 
 Success response (200):
 
@@ -81,6 +81,14 @@ Failure response (400 / 422 / 500):
 ```json
 { "ok": false, "err": "screen[0].widgets[3]: unknown type 'nope'" }
 ```
+
+Timeouts:
+
+| Status | `err` | Meaning |
+|---|---|---|
+| 408 | `body not received` | The body did not arrive within 10 s (a single receive can run up to 10 s past that). Nothing was queued. |
+| 504 | `apply timed out; not applied` | The apply did not start within 20 s, for instance while the UI task drained a burst of deltas. It was dropped; the previous layout stays. |
+| 504 | `apply still running; check /hello` | The apply started but did not finish within 8 s more. It still swaps in if it succeeds, so read `GET /hello` for the active layout. |
 
 ### `GET /screenshot`
 
@@ -164,9 +172,53 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `tab_strip_height`| int     | no       | `56`    | Pixel height of the multi-screen tab strip. Ignored when there is only one screen. |
 | `tab_strip`       | string  | no       | `"fixed"` | Where the multi-screen tab strip sits. `"fixed"`: below the pages, which share the height with it. `"overlay-bottom"`: the pages take the full height; the strip is hidden and shows above the bottom of the page after a swipe up from the bottom edge or a page swipe, until a tab is tapped or for 5 s. A device draws a value it does not know as `"fixed"`; `/hello.display.tab_strip` lists the values it supports. Ignored when there is only one screen. |
 | `display`         | object  | no       | —       | Backlight power-save. `display.idle_timeout_sec` (uint): seconds of no touch before the backlight dims; `0` or omitted disables the dimmer. `display.idle_dim_pct` (uint 0-100, default 0 = fully off): brightness while idle. While dimmed the device covers the layout with a "TAP TO WAKE" overlay so the first wake-tap can't accidentally hit a widget underneath. **Day/night gating**: the dimmer only engages at night, driven by SignalK `environment.mode` (`"day"`/`"night"`, subscribed automatically) as published by the `signalk-espos-manager` plugin, which computes it offline from `navigation.position` with `@openwaters/almanac` (`day` from sunrise to sunset); `signalk-derived-data`'s Sun calculation publishes the same path and works too. Fail-safe to always-on until SK has delivered a value (so a server without either plugin, or without a position, just leaves the panel bright). Wake sources: any touch, any incoming notification (escalation only), a fresh layout push. All three re-arm the idle timer. Capability advertised by `/hello.display.idle_timeout = true` + `idle_dim_pct = true`. |
+| `theme`           | object  | no       | —       | Panel colors, see [Themes](#themes). |
 | `screens`         | array   | yes      | —       | At least one screen.                                 |
 
 On a layout with more than one screen, a horizontal swipe on the page shows the next screen (swipe left) or the previous one (swipe right), in tab order; past the last screen it wraps to the first, and back. A swipe that starts on a slider or an arc, or that scrolls a list, stays with that widget, and the widget under the finger gets no click.
+
+### Themes
+
+The panel has three color themes: **day** (light, readable in sunlight,
+espOS blue accent), **dark** (deep navy, signal-yellow accent, full zone
+colors) and **night** (red on black, to keep night vision). `theme` picks
+one and can override a few colors:
+
+| Field      | Type   | Default  | Notes |
+|------------|--------|----------|-------|
+| `mode`     | string | `"auto"` | `auto`, `day`, `dark` or `night`. `auto` follows SignalK `environment.mode` (the same path the idle dimmer reads): night red from sunset, `day_base` by day. Until a value arrives, auto shows `day_base`. |
+| `day_base` | string | `"day"`  | What `auto` shows by day: `day` or `dark`. Defaults to `dark` when the layout sets `bg`, `fg` or `accent`, since such colors were picked for the dark panel. |
+| `bg`       | string | palette  | Hex screen background. Ignored at night. |
+| `fg`       | string | palette  | Hex default text color. Ignored at night. |
+| `accent`   | string | palette  | Hex default indicator color (bars, arcs, sliders). Ignored at night. |
+
+A theme change at sunrise or sunset rebuilds the active layout through the
+same staging swap as a push, so the screen never blanks, and stays on the
+selected tab. Widgets restart with the rebuild; an `anchor_track` keeps its
+swing tail. Zones and notifications use the theme's shades of the same
+escalation (night: red shades that brighten with severity). At night a
+`label` or `value` tile shows alert and warn as a red border and keeps its
+dark fill; alarm and emergency still fill the tile. Per-widget
+`bg_color`/`fg_color` apply in every theme.
+
+`/hello.display.themes` lists the accepted modes and `/hello.display.theme`
+the one on screen now (`day`, `dark` or `night`). A device without them
+ignores `theme.mode`.
+
+The panel's own setting `cockpit.theme` (`auto`, `day`, `dark` or `night`,
+in the espOS config API and web UI) wins over `theme.mode` when it is not
+`auto`, so a crew member can switch to night at the helm whatever layout is
+loaded.
+
+#### Settings menu
+
+The gear at the right end of the status strip opens the panel's settings:
+backlight brightness, the theme and screen off. Holding a finger still
+for 3 s anywhere but on a control (button, slider, switch, image) opens
+it too, which also works when a layout hides the strip; the held press is
+dropped, so nothing under the finger fires. The menu writes `cockpit.brightness` and `cockpit.theme` through the
+config API and closes itself after 30 s without a touch. Screen off turns the
+backlight fully off until the next tap, a layout push or an alarm.
 
 ### Screen object
 
@@ -187,8 +239,8 @@ On a layout with more than one screen, a horizontal swipe on the page shows the 
 | `label`    | string  | no       | —       | Caption text. Semantics depend on widget kind.         |
 | `bind`     | string  | no       | —       | SignalK path. Required for everything except a label whose `label` is a fixed string. |
 | `display`  | object  | no       | —       | Value formatting (see below).                          |
-| `bg_color` | string  | no       | theme `#161b22` | Hex color (`#rrggbb` or `#rgb`) for the tile background. **SK zones still win** when the path matches one; this is the fallback. Use it for operator-meaningful fixed colors (STOP=red, ACK=yellow) that should be visible even without zone state. |
-| `fg_color` | string  | no       | theme `#e6edf3` / `#58a6ff` | Hex color for the value text (label/bar) or arc indicator. Same zone-wins precedence. |
+| `bg_color` | string  | no       | theme tile color | Hex color (`#rrggbb` or `#rgb`) for the tile background. **SK zones still win** when the path matches one; this is the fallback. Use it for operator-meaningful fixed colors (STOP=red, ACK=yellow) that should be visible even without zone state. |
+| `fg_color` | string  | no       | theme text / accent color | Hex color for the value text (label/bar) or arc indicator. Same zone-wins precedence. |
 
 ### `display` object
 
@@ -410,7 +462,7 @@ The device subscribes to every `bind` path in the active layout over a single Si
 The device requests meta in-stream (`sendMeta=all`) and uses two kinds of meta per path:
 
 - **`displayUnits` formula** (preferred when available): inferred `scale` / `offset` / `unit` so a widget without an explicit `display` block still formats sensibly.
-- **`zones[]`**: array of `{lower?, upper?, state}` entries where `state ∈ {nominal, alert, warn, alarm, emergency}`. Matching is in **raw SK units** (`lower ≤ raw_value < upper`, or `raw_value == lower` when `lower == upper` for point zones on bool/int paths). Zones are first-match in declaration order. Matching widget's background is tinted per the state, using a maritime-helm escalation palette: nominal/normal → green, alert → yellow, warn → orange, alarm → red, emergency → purple. Widgets without zone meta get the theme default. *Note: this palette is one severity step warmer than the SK spec defaults (which puts alert at blue) — chosen so a glance at the helm reads like a traffic light.*
+- **`zones[]`**: array of `{lower?, upper?, state}` entries where `state ∈ {nominal, alert, warn, alarm, emergency}`. Matching is in **raw SK units** (`lower ≤ raw_value < upper`, or `raw_value == lower` when `lower == upper` for point zones on bool/int paths). Zones are first-match in declaration order. Matching widget's background is tinted per the state, using a maritime-helm escalation palette: nominal/normal → green, alert → yellow, warn → orange, alarm → red, emergency → purple. Widgets without zone meta get the theme default. The shades follow the active [theme](#themes). *Note: this palette is one severity step warmer than the SK spec defaults (which puts alert at blue) — chosen so a glance at the helm reads like a traffic light.*
 
 When the layout's explicit `display` block is present it overrides the path's `displayUnits` formula.
 
@@ -436,10 +488,32 @@ Top-level layout fields:
 | Field                    | Type   | Default       | Notes                                                  |
 |--------------------------|--------|---------------|--------------------------------------------------------|
 | `notifications.enabled`  | bool   | `true`        | Master switch for the overlay.                         |
-| `notifications.min_state`| string | `"alarm"`     | One of `alert` \| `warn` \| `alarm` \| `emergency`. Only notifications at or above this severity trigger the modal. |
+| `notifications.min_state`| string | `"alarm"`     | One of `alert` \| `warn` \| `alarm` \| `emergency`. The default threshold: states at or above it show the modal and chime as the source asks. `levels` overrides it per state. |
 | `notifications.ack_method`| string | `"modal"`    | v1: `"modal"` only. Future versions may add `"toast"` for non-blocking auto-dismiss alerts. |
+| `notifications.levels`   | object | —             | Optional. Per-state overrides, keyed `alert` \| `warn` \| `alarm` \| `emergency`. A state left out keeps what `min_state` implies. |
 
-The device subscribes to `notifications.*` and consumes every delta. Notifications in `state: "normal"` / `"nominal"` are treated as cleared and removed from the registry. The most-severe pending notification at or above `min_state` is shown.
+Each `levels.<state>` entry takes:
+
+| Field      | Type   | Default from `min_state`              | Notes |
+|------------|--------|---------------------------------------|-------|
+| `show`     | bool   | `true` at or above `min_state`        | The modal pops for this state. |
+| `sound`    | string | `"source"` at or above, else `"off"`  | `off`: never chime. `source`: chime when the notification's SK `method` contains `"sound"`. `always`: chime regardless of `method`. |
+| `repeat_s` | int    | `0`                                   | Chime again every so many seconds until the notification is acked, cleared or the panel is muted. Unmuting does not restart them; the next escalation does. `0` plays once. Clamped to 0..3600. |
+
+```json
+"notifications": {
+  "enabled": true,
+  "min_state": "warn",
+  "levels": {
+    "warn":  { "show": true, "sound": "always" },
+    "alarm": { "show": true, "sound": "source", "repeat_s": 10 }
+  }
+}
+```
+
+A designer that writes `levels` also writes `min_state` as the lowest shown state. Firmware without `levels` shows every state from `min_state` up, so a state hidden above a shown one (`warn` shown, `alarm` hidden) still shows there. A dimmed panel wakes only for a state that is shown or would chime; a hidden state that would only chime does not wake a muted panel.
+
+The device subscribes to `notifications.*` and consumes every delta. Notifications in `state: "normal"` / `"nominal"` are treated as cleared and removed from the registry. The most-severe pending notification among the shown states is shown.
 
 ACK: tapping the on-screen ACK button sends a SignalK delta over the WebSocket with `{updates: [{values: [{path: "notifications.<...>", value: {state: "normal", message: "", method: []}}]}]}`. signalk-server's `filterNotifications` interceptor routes the delta to its NotificationManager, which syncs the alarm's state to `normal`; the server then echoes the cleared state back to all clients (including ours). The overlay observes the registry change and either refills with the next-most-severe pending notification or hides. (Note: the server's modern notification API does NOT honour a REST/WS PUT-with-state-normal against the path directly — only the inbound-delta route is wired through.)
 
