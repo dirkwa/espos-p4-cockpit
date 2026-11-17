@@ -175,7 +175,7 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `theme`           | object  | no       | —       | Panel colors, see [Themes](#themes). |
 | `screens`         | array   | yes      | —       | At least one screen.                                 |
 
-On a layout with more than one screen, a horizontal swipe on the page shows the next screen (swipe left) or the previous one (swipe right), in tab order; past the last screen it wraps to the first, and back. A swipe that starts on a slider or an arc, or that scrolls a list, stays with that widget, and the widget under the finger gets no click.
+On a layout with more than one screen, a horizontal swipe on the page shows the next screen (swipe left) or the previous one (swipe right), in tab order; past the last screen it wraps to the first, and back. A swipe that starts on a slider, an arc, a stream or a `button` without `hold_ms`, or that scrolls a list, stays with that widget, and the widget under the finger gets no click. Such a button sends `press_value` the moment it is touched, so a swipe starting on it would end a real press in a page change; it keeps the press until the finger lifts instead. A `button` with `hold_ms` sends nothing if a swipe takes the press before the hold ends.
 
 ### Themes
 

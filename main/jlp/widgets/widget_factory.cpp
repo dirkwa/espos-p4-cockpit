@@ -1889,6 +1889,9 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_label_set_text(lbl, caption);
   lv_obj_center(lbl);
 
+  // Sent on touch-down, a press must not also turn the page.
+  if (hold_ms == 0) mark_press_keeper(root);
+
   auto* bctx = new ButtonCtx{path, press_json, release_json, hold_ms,
                              nullptr, root, false};
   lv_obj_set_user_data(root, bctx);

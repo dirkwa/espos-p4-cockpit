@@ -24,6 +24,17 @@ struct BuildCtx {
 // previous screen).
 lv_obj_t* build_widget(BuildCtx& ctx, JsonObjectConst spec, std::string* err);
 
+// A widget that acts the moment it is touched (a button without hold_ms)
+// keeps the press: a page or edge swipe that starts on it does not turn
+// the page, or the press it has already sent would end in a page change.
+// Marked with LV_STATE_USER_2, which no style targets.
+inline void mark_press_keeper(lv_obj_t* obj) {
+  lv_obj_set_state_user_2(obj, true);
+}
+inline bool is_press_keeper(const lv_obj_t* obj) {
+  return lv_obj_is_state_user_2(obj);
+}
+
 // Widget roots that are plain objects but act on touch (button, voice)
 // carry LV_STATE_USER_1, so panel-wide gestures such as the settings hold
 // leave them alone. No style targets that state. Controls built from LVGL's

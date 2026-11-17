@@ -374,11 +374,16 @@ static bool inside(lv_obj_t* obj, lv_obj_t* root) {
   return false;
 }
 
-// A drag on a slider or arc moves it; it must not also turn the page.
+// A drag on a slider or arc moves it; it must not also turn the page. The
+// same holds for an image, which only the stream widget creates: it
+// forwards the drag to the remote browser, and its release would be lost
+// with the page. And for a momentary button: it sent its press on
+// touch-down, and a swipe would turn the page under it.
 static bool drags(lv_obj_t* obj, lv_obj_t* root) {
   for (lv_obj_t* o = obj; o != nullptr && o != root; o = lv_obj_get_parent(o)) {
     if (lv_obj_check_type(o, &lv_slider_class) ||
-        lv_obj_check_type(o, &lv_arc_class)) {
+        lv_obj_check_type(o, &lv_arc_class) ||
+        lv_obj_check_type(o, &lv_image_class) || is_press_keeper(o)) {
       return true;
     }
   }
@@ -416,7 +421,10 @@ void LayoutManager::on_press() {
   // Called from the PRESSED event, while LVGL has the pressed object set.
   pressed_ = lv_indev_get_active_obj();
   ScreenSwitcherCtx* ctx = switcher_of(current_root_);
-  if (ctx == nullptr || swipe_timer_ != 0) return;
+  // A tracker still running belongs to a press that has ended, released
+  // within one poll; this press gets its own, measured from its own start.
+  cancel_swipe();
+  if (ctx == nullptr) return;
   if (ctx->peeking) ctx->peek_start = lv_tick_get();  // still choosing
   if (!press_on_layout_ || drags(hit, current_root_)) return;
   press_at_edge_ = ctx->overlay && !ctx->peeking &&
