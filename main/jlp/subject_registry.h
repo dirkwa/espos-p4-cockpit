@@ -57,8 +57,10 @@ struct SubjectEntry {
 // What an espOS subscription's callback gets: the entry, and the entry's
 // sub_gen when the subscription was made.
 struct SubCtx {
-  SubjectEntry* entry;
-  uint32_t gen;
+  SubjectEntry* entry = nullptr;
+  std::atomic<uint32_t> gen{0};
+  // When its subscription ended, 0 while it runs. UI task only.
+  int64_t ended_us = 0;
 };
 
 // Maps a widget bind -> lv_subject_t. Subjects are created lazily by
@@ -106,11 +108,11 @@ class SubjectRegistry {
   struct Slot {
     std::unique_ptr<SubjectEntry> entry;
     int sub_handle = 0;   // espos_sk subscription (0 = none)
-    // One per subscription ever made for the path. Kept for the device
-    // lifetime, like the entry: a late callback of an ended subscription
-    // may still read its context. A path is subscribed again only when a
-    // layout binds it after one that did not, so these stay few.
+    // The contexts of this path's subscriptions. One whose subscription
+    // ended is not freed, as a late callback may still read it; it is
+    // used again once none can (kCtxReuseUs), so these stay few.
     std::vector<std::unique_ptr<SubCtx>> ctxs;
+    SubCtx* live_ctx = nullptr;  // the running subscription's
   };
   static int subscribe(const std::string& path, Slot& slot);
   std::unordered_map<std::string, Slot> map_;

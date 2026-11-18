@@ -23,6 +23,11 @@ namespace {
 
 constexpr int kListenPeriodMs = 1000;
 
+// How long after its subscription ended a context may be used again. A
+// callback runs for milliseconds (ui::post only queues), so none of an
+// ended subscription still holds its context by then.
+constexpr int64_t kCtxReuseUs = 10 * 1000 * 1000;
+
 // A delta read once, on the stream task: the freshness mark and the UI
 // task's setter take the same reading. null counts as a reading (there is
 // none now); a non-finite float, or text that is no number on a numeric
@@ -302,6 +307,10 @@ void SubjectRegistry::garbage_collect(
       espos_sk_unsubscribe(slot.sub_handle);
       slot.sub_handle = 0;
       ++slot.entry->sub_gen;
+      if (slot.live_ctx) {
+        slot.live_ctx->ended_us = esp_timer_get_time();
+        slot.live_ctx = nullptr;
+      }
       // Its value goes stale from here; a later layout's REST seed may
       // replace it again, but only one whose GET starts after this: an
       // answer still on its way belongs to the old binding. The zones keep
@@ -315,10 +324,30 @@ void SubjectRegistry::garbage_collect(
 }
 
 int SubjectRegistry::subscribe(const std::string& path, Slot& slot) {
-  slot.ctxs.push_back(std::make_unique<SubCtx>(
-      SubCtx{slot.entry.get(), slot.entry->sub_gen.load()}));
-  return espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update,
-                            slot.ctxs.back().get());
+  const int64_t now = esp_timer_get_time();
+  SubCtx* ctx = nullptr;
+  for (auto& c : slot.ctxs) {
+    if (c->ended_us != 0 && now - c->ended_us >= kCtxReuseUs) {
+      ctx = c.get();
+      break;
+    }
+  }
+  if (!ctx) {
+    slot.ctxs.push_back(std::make_unique<SubCtx>());
+    ctx = slot.ctxs.back().get();
+  }
+  ctx->entry = slot.entry.get();
+  ctx->gen = slot.entry->sub_gen.load();
+  ctx->ended_us = 0;
+  const int handle =
+      espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update, ctx);
+  if (handle > 0) {
+    slot.live_ctx = ctx;
+  } else {
+    // No callback can hold it: free to use at once.
+    ctx->ended_us = now - kCtxReuseUs;
+  }
+  return handle;
 }
 
 SubjectRegistry& registry() {
