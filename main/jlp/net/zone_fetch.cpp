@@ -1,6 +1,7 @@
 #include "zone_fetch.h"
 
 #include <ArduinoJson.h>
+#include <algorithm>
 #include <climits>
 #include <cmath>
 #include <cstdlib>
@@ -43,7 +44,9 @@ struct ValueResult {
   std::string path;
   int64_t requested_us = 0;  // esp_timer time the GET started
   bool is_float = false;
-  float f = 0.0f;
+  // As the stream reads it (strtod), so an Int path truncates the same
+  // value from either source.
+  double d = 0.0;
   int i = 0;
 };
 
@@ -110,10 +113,10 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
     r.i = v.as<int>();
   } else if (v.is<float>() || v.is<double>()) {
     // 1e999 parses to +Inf; a non-finite seed would reach every observer.
-    const float f = v.as<float>();
-    if (!std::isfinite(f)) return;
+    const double d = v.as<double>();
+    if (!std::isfinite(d)) return;
     r.is_float = true;
-    r.f = f;
+    r.d = d;
   } else {
     // String / object values aren't seeded — string subjects read
     // description() at build time and the str_buf is owned by the stream
@@ -161,19 +164,24 @@ void fetch_task(void* arg) {
       if (!sub) continue;
       switch (*kind) {
         case SubjectKind::Float:
-          if (vr.is_float) lv_subject_set_float(sub, vr.f);
-          else lv_subject_set_float(sub, (float)vr.i);
+          if (vr.is_float) {
+            // Beyond float's range is no reading, as strtof in the stream.
+            const float f = static_cast<float>(vr.d);
+            if (std::isfinite(f)) lv_subject_set_float(sub, f);
+          } else {
+            lv_subject_set_float(sub, (float)vr.i);
+          }
           break;
         case SubjectKind::Int:
         case SubjectKind::Bool:
           // Coerce a float reading (SK may report an int path's value
           // as 5.0) so the seed isn't silently dropped — mirrors the
           // int→float coercion the Float case does.
-          // Clamp first: casting a float beyond int's range is undefined.
+          // Clamp first: casting a value beyond int's range is undefined.
+          // In double and cut toward zero, as the stream does.
           if (vr.is_float) {
-            const float c = std::fmin(std::fmax(vr.f, (float)INT_MIN),
-                                      (float)INT_MAX);
-            lv_subject_set_int(sub, c >= (float)INT_MAX ? INT_MAX : (int)c);
+            lv_subject_set_int(
+                sub, (int)std::clamp(vr.d, (double)INT_MIN, (double)INT_MAX));
           } else {
             lv_subject_set_int(sub, vr.i);
           }
