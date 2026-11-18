@@ -1,11 +1,16 @@
 #include "zone_fetch.h"
 
 #include <ArduinoJson.h>
+#include <algorithm>
+#include <cfloat>
+#include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <memory>
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk_http.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,6 +33,7 @@ struct FetchArgs {
 // hand-off; apply_meta reads it on the UI side.
 struct MetaResult {
   std::string path;
+  int64_t requested_us = 0;  // esp_timer time the GET started
   JsonDocument doc;
 };
 
@@ -38,8 +44,11 @@ struct MetaResult {
 // here.
 struct ValueResult {
   std::string path;
+  int64_t requested_us = 0;  // esp_timer time the GET started
   bool is_float = false;
-  float f = 0.0f;
+  // As the stream reads it (strtod), so an Int path truncates the same
+  // value from either source.
+  double d = 0.0;
   int i = 0;
 };
 
@@ -47,6 +56,7 @@ struct ValueResult {
 // blob carries zones or a description. Does NOT touch the UI task — the
 // whole batch is drained in a single post by the caller.
 void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
+  const int64_t requested_us = esp_timer_get_time();
   char* json = nullptr;
   esp_err_t err = espos_sk_get_meta(path.c_str(), &json);
   if (err != ESP_OK) {
@@ -70,6 +80,7 @@ void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
   JsonObjectConst obj = r.doc.as<JsonObjectConst>();
   if (obj["zones"].isNull() && obj["description"].isNull()) return;
   r.path = path;
+  r.requested_us = requested_us;
   out->push_back(std::move(r));
 }
 
@@ -81,6 +92,7 @@ void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
 // go. Like fetch_meta, this stays off the UI task; the value is extracted
 // here and the result applied in the batch drain.
 void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
+  const int64_t requested_us = esp_timer_get_time();
   char* json = nullptr;
   if (espos_sk_get_value(path.c_str(), &json) != ESP_OK) return;
 
@@ -95,6 +107,7 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
 
   ValueResult r;
   r.path = path;
+  r.requested_us = requested_us;
   // Check bool and int before float: ArduinoJson reports is<float>() true
   // for integers too, so testing float first would route an integer
   // reading through as<float>() and lose precision on large values.
@@ -103,8 +116,11 @@ void fetch_value(const std::string& path, std::vector<ValueResult>* out) {
   } else if (v.is<int>()) {
     r.i = v.as<int>();
   } else if (v.is<float>() || v.is<double>()) {
+    // 1e999 parses to +Inf; a non-finite seed would reach every observer.
+    const double d = v.as<double>();
+    if (!std::isfinite(d)) return;
     r.is_float = true;
-    r.f = v.as<float>();
+    r.d = d;
   } else {
     // String / object values aren't seeded — string subjects read
     // description() at build time and the str_buf is owned by the stream
@@ -138,25 +154,57 @@ void fetch_task(void* arg) {
   // Single hop onto the UI task to apply the whole batch.
   cockpit_hal::ui::post([metas, values]() {
     for (auto& m : *metas) {
+      // Zones the stream sent after this GET started, or a later GET's that
+      // were applied, are newer; an older answer, an empty array above all,
+      // must not replace them. Its description still applies.
+      if (m.doc["zones"].is<JsonArrayConst>() &&
+          !registry().accept_zones(m.path, m.requested_us)) {
+        m.doc.remove("zones");
+      }
       zones().apply_meta(m.path, m.doc.as<JsonObjectConst>());
     }
     for (auto& vr : *values) {
       auto kind = registry().kind_of(vr.path);
       if (!kind) continue;  // path not bound by any widget
+      // A stream delta received after this GET started may be newer than
+      // its answer, and Signal K only sends on change; keep it. One from
+      // before the GET is older than the server's current value. Likewise
+      // an overlapping fetch whose GET started later and already applied.
+      // Beyond float's range is no reading for a Float path, as strtof in
+      // the stream; it must not count as the applied seed either, or an
+      // older valid answer would be refused. Checked before the cast, which
+      // is undefined out of range. NaN fails the test too.
+      if (*kind == SubjectKind::Float && vr.is_float &&
+          !(std::fabs(vr.d) <= FLT_MAX)) {
+        continue;
+      }
+      if (!registry().accept_seed(vr.path, vr.requested_us)) continue;
       lv_subject_t* sub = registry().lookup(vr.path);
       if (!sub) continue;
       switch (*kind) {
         case SubjectKind::Float:
-          if (vr.is_float) lv_subject_set_float(sub, vr.f);
-          else lv_subject_set_float(sub, (float)vr.i);
+          if (vr.is_float) {
+            lv_subject_set_float(sub, static_cast<float>(vr.d));
+          } else {
+            lv_subject_set_float(sub, (float)vr.i);
+          }
+          break;
+        case SubjectKind::Bool:
+          // On only for true or 1, as the stream reads a Bool path.
+          lv_subject_set_int(sub, (vr.is_float ? vr.d == 1.0 : vr.i == 1) ? 1 : 0);
           break;
         case SubjectKind::Int:
-        case SubjectKind::Bool:
           // Coerce a float reading (SK may report an int path's value
           // as 5.0) so the seed isn't silently dropped — mirrors the
           // int→float coercion the Float case does.
-          if (vr.is_float) lv_subject_set_int(sub, (int)vr.f);
-          else lv_subject_set_int(sub, vr.i);
+          // Clamp first: casting a value beyond int's range is undefined.
+          // In double and cut toward zero, as the stream does.
+          if (vr.is_float) {
+            lv_subject_set_int(
+                sub, (int)std::clamp(vr.d, (double)INT_MIN, (double)INT_MAX));
+          } else {
+            lv_subject_set_int(sub, vr.i);
+          }
           break;
         case SubjectKind::String:
           break;  // seeded from description() at build time

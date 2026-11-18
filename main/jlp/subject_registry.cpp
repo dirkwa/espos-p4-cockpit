@@ -1,11 +1,16 @@
 #include "subject_registry.h"
 
 #include <ArduinoJson.h>
+#include <algorithm>
+#include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espos_sk.h"
 
 #include "zone_registry.h"
@@ -18,23 +23,83 @@ namespace {
 
 constexpr int kListenPeriodMs = 1000;
 
+// A delta read once, on the stream task: the freshness mark and the UI
+// task's setter take the same reading. null counts as a reading (there is
+// none now); a non-finite float, or text that is no number on a numeric
+// path, does not, so a REST seed may still be the better one.
+struct Reading {
+  bool is_null = false;
+  bool ok = true;
+  float f = 0.0f;
+  double n = 0.0;
+};
+
+Reading read_delta(SubjectKind kind, const std::string& v) {
+  Reading r;
+  if (v == "null") {
+    r.is_null = true;
+    return r;
+  }
+  char* end = nullptr;
+  switch (kind) {
+    case SubjectKind::Float:
+      // strtof takes "inf", "nan" and 1e999 (+Inf); no observer (bar, arc,
+      // zone match, label) is ready for a non-finite value. A JSON string or
+      // other text converts to 0 with no characters consumed; that is no
+      // reading either.
+      r.f = strtof(v.c_str(), &end);
+      r.ok = end != v.c_str() && std::isfinite(r.f);
+      break;
+    case SubjectKind::Int:
+      // A toggle is Int-backed and Signal K sends a switch state as true or
+      // false; those are 1 and 0, not text that is no number.
+      if (v == "true" || v == "false") {
+        r.n = v == "true" ? 1.0 : 0.0;
+        break;
+      }
+      // Read as a JSON number, not just its leading integer digits: 1e3 is
+      // 1000. A fraction is cut toward zero.
+      r.n = strtod(v.c_str(), &end);
+      r.ok = end != v.c_str() && std::isfinite(r.n);
+      break;
+    case SubjectKind::Bool:
+    case SubjectKind::String:
+      break;
+  }
+  return r;
+}
+
 // One espOS subscription per path. The callback runs on the SignalK stream
-// task with strings that die when it returns, so it copies the value into
-// a heap string and hops onto the UI thread, where lv_subject_* is legal.
-// Values arrive as JSON text (numbers, "strings", true/false, null);
-// meta items carry the meta object.
+// task with strings that die when it returns, so it copies what it needs
+// and hops onto the UI thread, where lv_subject_* is legal. Values arrive
+// as JSON text (numbers, "strings", true/false, null); meta items carry
+// the meta object.
 void on_update(const espos_sk_update_t* u, void* arg) {
+  // Taken first: a REST GET that starts while this callback runs must not
+  // count as older than this delta.
+  const int64_t rx_us = esp_timer_get_time();
   auto* entry = static_cast<SubjectEntry*>(arg);
   if (u->value_json) {
     std::string v(u->value_json);
-    cockpit_hal::ui::post([entry, v = std::move(v)]() {
+    const Reading r = read_delta(entry->kind, v);
+    // Recorded here, on the stream task, before the hop: a REST seed
+    // applied on the UI task while this delta waits in the queue must
+    // already see it as newer.
+    if (r.ok) entry->stream_rx_us = rx_us;
+    cockpit_hal::ui::post([entry, v = std::move(v), r, rx_us]() {
+      // A REST seed whose GET started after this delta arrived was applied
+      // while it waited in the queue; it is the newer reading.
+      if (entry->seed_req_us > rx_us) return;
       lv_subject_t* s = entry->subject;
       switch (entry->kind) {
         case SubjectKind::Float:
-          if (v != "null") lv_subject_set_float(s, strtof(v.c_str(), nullptr));
+          if (!r.is_null && r.ok) lv_subject_set_float(s, r.f);
           break;
         case SubjectKind::Int:
-          if (v != "null") lv_subject_set_int(s, (int)strtol(v.c_str(), nullptr, 10));
+          if (!r.is_null && r.ok) {
+            lv_subject_set_int(
+                s, (int)std::clamp(r.n, (double)INT_MIN, (double)INT_MAX));
+          }
           break;
         case SubjectKind::Bool:
           lv_subject_set_int(s, (v == "true" || v == "1") ? 1 : 0);
@@ -63,15 +128,21 @@ void on_update(const espos_sk_update_t* u, void* arg) {
       }
     });
   } else if (u->meta_json) {
-    // raw meta object {units, description, zones, ...}: ZoneRegistry parses it
-    std::string m(u->meta_json);
+    // The meta object {units, description, zones, ...}, parsed here so the
+    // freshness mark sees its real fields, then handed to ZoneRegistry.
+    auto doc = std::make_shared<JsonDocument>();
+    if (deserializeJson(*doc, u->meta_json) != DeserializationError::Ok) return;
+    if (doc->as<JsonObjectConst>().isNull()) return;
+    // Zones from the stream, an empty array (a clear) included, are newer
+    // than a REST meta whose GET started earlier. Meta without them leaves
+    // the mark alone.
+    if ((*doc)["zones"].is<JsonArrayConst>()) entry->zones_rx_us = rx_us;
     std::string p(u->path);
-    cockpit_hal::ui::post([p, m = std::move(m)]() {
-      JsonDocument doc;
-      if (deserializeJson(doc, m) != DeserializationError::Ok) return;
-      JsonObjectConst meta = doc.as<JsonObjectConst>();
-      if (meta.isNull()) return;
-      zones().apply_meta(p, meta);
+    cockpit_hal::ui::post([entry, p, doc, rx_us]() {
+      // Zones from a REST GET that started after this arrived were applied
+      // while it waited in the queue; only its description still counts.
+      if (entry->zones_req_us > rx_us) doc->remove("zones");
+      zones().apply_meta(p, doc->as<JsonObjectConst>());
     });
   }
 }
@@ -176,6 +247,30 @@ std::optional<SubjectKind> SubjectRegistry::kind_of(
   return it->second.entry->kind;
 }
 
+bool SubjectRegistry::accept_seed(const std::string& path, int64_t requested_us) {
+  auto it = map_.find(path);
+  if (it == map_.end()) return false;
+  SubjectEntry& e = *it->second.entry;
+  if (e.stream_rx_us > requested_us || e.seed_req_us > requested_us) return false;
+  e.seed_req_us = requested_us;
+  return true;
+}
+
+bool SubjectRegistry::accept_zones(const std::string& path,
+                                   int64_t requested_us) {
+  auto it = map_.find(path);
+  if (it == map_.end()) return true;
+  SubjectEntry& e = *it->second.entry;
+  if (e.zones_rx_us > requested_us || e.zones_req_us > requested_us) return false;
+  e.zones_req_us = requested_us;
+  return true;
+}
+
+int64_t SubjectRegistry::stream_rx_us(const std::string& path) const {
+  auto it = map_.find(path);
+  return it == map_.end() ? 0 : it->second.entry->stream_rx_us.load();
+}
+
 std::vector<std::string> SubjectRegistry::paths() const {
   std::vector<std::string> out;
   out.reserve(map_.size());
@@ -197,6 +292,12 @@ void SubjectRegistry::garbage_collect(
     if (!live && slot.sub_handle > 0) {
       espos_sk_unsubscribe(slot.sub_handle);
       slot.sub_handle = 0;
+      // Its value goes stale from here; a later layout's REST seed may
+      // replace it again, but only one whose GET starts after this: an
+      // answer still on its way belongs to the old binding. The zones keep
+      // their marks, as the zones themselves stay.
+      slot.entry->stream_rx_us = 0;
+      slot.entry->seed_req_us = esp_timer_get_time();
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
     }
