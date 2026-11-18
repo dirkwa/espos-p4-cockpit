@@ -78,7 +78,14 @@ void on_update(const espos_sk_update_t* u, void* arg) {
   // Taken first: a REST GET that starts while this callback runs must not
   // count as older than this delta.
   const int64_t rx_us = esp_timer_get_time();
-  auto* entry = static_cast<SubjectEntry*>(arg);
+  const auto* ctx = static_cast<const SubCtx*>(arg);
+  SubjectEntry* entry = ctx->entry;
+  const uint32_t gen = ctx->gen;
+  // A callback of an ended subscription. The test is repeated on the UI
+  // task: the subscription may end between here and there. A mark written
+  // after it ended is older than any GET of a later subscription, so it
+  // cannot refuse that GET's answer.
+  if (entry->sub_gen != gen) return;
   if (u->value_json) {
     std::string v(u->value_json);
     const Reading r = read_delta(entry->kind, v);
@@ -86,7 +93,8 @@ void on_update(const espos_sk_update_t* u, void* arg) {
     // applied on the UI task while this delta waits in the queue must
     // already see it as newer.
     if (r.ok) entry->stream_rx_us = rx_us;
-    cockpit_hal::ui::post([entry, v = std::move(v), r, rx_us]() {
+    cockpit_hal::ui::post([entry, gen, v = std::move(v), r, rx_us]() {
+      if (entry->sub_gen != gen) return;
       // A REST seed whose GET started after this delta arrived was applied
       // while it waited in the queue; it is the newer reading.
       if (entry->seed_req_us > rx_us) return;
@@ -138,7 +146,8 @@ void on_update(const espos_sk_update_t* u, void* arg) {
     // the mark alone.
     if ((*doc)["zones"].is<JsonArrayConst>()) entry->zones_rx_us = rx_us;
     std::string p(u->path);
-    cockpit_hal::ui::post([entry, p, doc, rx_us]() {
+    cockpit_hal::ui::post([entry, gen, p, doc, rx_us]() {
+      if (entry->sub_gen != gen) return;
       // Zones from a REST GET that started after this arrived were applied
       // while it waited in the queue; only its description still counts.
       if (entry->zones_req_us > rx_us) doc->remove("zones");
@@ -221,7 +230,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
   if (is_local_sentinel(path)) {
     slot.sub_handle = 0;
   } else {
-    slot.sub_handle = espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update, slot.entry.get());
+    slot.sub_handle = subscribe(path, slot);
     if (slot.sub_handle <= 0) {
       ESP_LOGW(TAG, "subscribe %s failed (%d)", path.c_str(), slot.sub_handle);
     }
@@ -292,6 +301,7 @@ void SubjectRegistry::garbage_collect(
     if (!live && slot.sub_handle > 0) {
       espos_sk_unsubscribe(slot.sub_handle);
       slot.sub_handle = 0;
+      ++slot.entry->sub_gen;
       // Its value goes stale from here; a later layout's REST seed may
       // replace it again, but only one whose GET starts after this: an
       // answer still on its way belongs to the old binding. The zones keep
@@ -299,9 +309,16 @@ void SubjectRegistry::garbage_collect(
       slot.entry->stream_rx_us = 0;
       slot.entry->seed_req_us = esp_timer_get_time();
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
-      slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
+      slot.sub_handle = subscribe(kv.first, slot);
     }
   }
+}
+
+int SubjectRegistry::subscribe(const std::string& path, Slot& slot) {
+  slot.ctxs.push_back(std::make_unique<SubCtx>(
+      SubCtx{slot.entry.get(), slot.entry->sub_gen.load()}));
+  return espos_sk_subscribe(path.c_str(), kListenPeriodMs, on_update,
+                            slot.ctxs.back().get());
 }
 
 SubjectRegistry& registry() {
