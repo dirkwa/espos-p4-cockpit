@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <algorithm>
+#include <cfloat>
 #include <climits>
 #include <cmath>
 #include <cstdlib>
@@ -159,15 +160,21 @@ void fetch_task(void* arg) {
       // its answer, and Signal K only sends on change; keep it. One from
       // before the GET is older than the server's current value. Likewise
       // an overlapping fetch whose GET started later and already applied.
+      // Beyond float's range is no reading for a Float path, as strtof in
+      // the stream; it must not count as the applied seed either, or an
+      // older valid answer would be refused. Checked before the cast, which
+      // is undefined out of range. NaN fails the test too.
+      if (*kind == SubjectKind::Float && vr.is_float &&
+          !(std::fabs(vr.d) <= FLT_MAX)) {
+        continue;
+      }
       if (!registry().accept_seed(vr.path, vr.requested_us)) continue;
       lv_subject_t* sub = registry().lookup(vr.path);
       if (!sub) continue;
       switch (*kind) {
         case SubjectKind::Float:
           if (vr.is_float) {
-            // Beyond float's range is no reading, as strtof in the stream.
-            const float f = static_cast<float>(vr.d);
-            if (std::isfinite(f)) lv_subject_set_float(sub, f);
+            lv_subject_set_float(sub, static_cast<float>(vr.d));
           } else {
             lv_subject_set_float(sub, (float)vr.i);
           }
