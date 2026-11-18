@@ -33,6 +33,7 @@ struct FetchArgs {
 // hand-off; apply_meta reads it on the UI side.
 struct MetaResult {
   std::string path;
+  int64_t requested_us = 0;  // esp_timer time the GET started
   JsonDocument doc;
 };
 
@@ -55,6 +56,7 @@ struct ValueResult {
 // blob carries zones or a description. Does NOT touch the UI task — the
 // whole batch is drained in a single post by the caller.
 void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
+  const int64_t requested_us = esp_timer_get_time();
   char* json = nullptr;
   esp_err_t err = espos_sk_get_meta(path.c_str(), &json);
   if (err != ESP_OK) {
@@ -78,6 +80,7 @@ void fetch_meta(const std::string& path, std::vector<MetaResult>* out) {
   JsonObjectConst obj = r.doc.as<JsonObjectConst>();
   if (obj["zones"].isNull() && obj["description"].isNull()) return;
   r.path = path;
+  r.requested_us = requested_us;
   out->push_back(std::move(r));
 }
 
@@ -151,6 +154,9 @@ void fetch_task(void* arg) {
   // Single hop onto the UI task to apply the whole batch.
   cockpit_hal::ui::post([metas, values]() {
     for (auto& m : *metas) {
+      // Zones the stream sent after this GET started are newer; an older
+      // answer, an empty array above all, must not replace them.
+      if (!registry().accept_meta(m.path, m.requested_us)) continue;
       zones().apply_meta(m.path, m.doc.as<JsonObjectConst>());
     }
     for (auto& vr : *values) {

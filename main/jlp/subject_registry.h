@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lvgl.h"
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -31,8 +32,12 @@ struct SubjectEntry {
   // esp_timer time (us) at which the stream task received the last delta
   // (null included) for this path, 0 for none since it was (re)subscribed.
   // zone_fetch skips its REST seed when this is later than the moment its
-  // GET started. UI task only.
-  int64_t stream_rx_us = 0;
+  // GET started. Written on the stream task when the delta arrives, before
+  // it hops to the UI task, so a seed applied in between already sees it.
+  std::atomic<int64_t> stream_rx_us{0};
+  // The same for the last stream meta that carried zones: an older REST
+  // meta must not replace them. A meta without zones does not count.
+  std::atomic<int64_t> zones_rx_us{0};
   // When the GET of the last applied REST seed started, 0 for none. Two
   // fetches can overlap (boot layout and stream up); the older answer must
   // not replace the newer one. UI task only.
@@ -68,6 +73,10 @@ class SubjectRegistry {
    *  newer. Records it as the applied seed when it may. False for an
    *  unknown path. UI task only. */
   bool accept_seed(const std::string& path, int64_t requested_us);
+  /** Whether a REST meta whose GET started at `requested_us` may set the
+   *  path's zones: not when stream meta with zones arrived after that.
+   *  True for a path not in the registry. UI task only. */
+  bool accept_meta(const std::string& path, int64_t requested_us) const;
   std::vector<std::string> paths() const;
 
   // Unsubscribe paths not in `live_paths` (subjects are kept).

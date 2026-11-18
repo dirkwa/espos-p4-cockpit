@@ -27,21 +27,40 @@ constexpr int kListenPeriodMs = 1000;
 // a heap string and hops onto the UI thread, where lv_subject_* is legal.
 // Values arrive as JSON text (numbers, "strings", true/false, null);
 // meta items carry the meta object.
+// Whether a delta is a reading the UI task will take for a subject of
+// `kind`: null is (no reading now), a non-finite float or text that is no
+// number on a numeric path is not, so a REST seed may still be the better
+// one. Must agree with the parsing in on_update.
+bool is_reading(SubjectKind kind, const std::string& v) {
+  if (v == "null") return true;
+  char* end = nullptr;
+  switch (kind) {
+    case SubjectKind::Float: {
+      const float f = strtof(v.c_str(), &end);
+      return end != v.c_str() && std::isfinite(f);
+    }
+    case SubjectKind::Int: {
+      const double n = strtod(v.c_str(), &end);
+      return end != v.c_str() && std::isfinite(n);
+    }
+    case SubjectKind::Bool:
+    case SubjectKind::String:
+      return true;
+  }
+  return true;
+}
+
 void on_update(const espos_sk_update_t* u, void* arg) {
   auto* entry = static_cast<SubjectEntry*>(arg);
   if (u->value_json) {
     std::string v(u->value_json);
-    // Taken here, on the stream task, not when the UI task gets to it: the
-    // REST seed compares against when the value arrived.
-    const int64_t rx_us = esp_timer_get_time();
-    cockpit_hal::ui::post([entry, v = std::move(v), rx_us]() {
+    // Recorded here, on the stream task, before the hop: a REST seed
+    // applied on the UI task while this delta waits in the queue must
+    // already see it as newer.
+    if (is_reading(entry->kind, v)) entry->stream_rx_us = esp_timer_get_time();
+    cockpit_hal::ui::post([entry, v = std::move(v)]() {
       lv_subject_t* s = entry->subject;
-      // Any delta, null included, is newer than zone_fetch's REST seed and
-      // makes it skip this path. Only a dropped value does not (a non-finite
-      // float, or text that is no number on a numeric path): the seed may
-      // still be the better reading.
       const bool is_null = v == "null";
-      bool fresh = true;
       switch (entry->kind) {
         case SubjectKind::Float:
           if (!is_null) {
@@ -53,8 +72,6 @@ void on_update(const espos_sk_update_t* u, void* arg) {
             const float f = strtof(v.c_str(), &end);
             if (end != v.c_str() && std::isfinite(f)) {
               lv_subject_set_float(s, f);
-            } else {
-              fresh = false;
             }
           }
           break;
@@ -68,8 +85,6 @@ void on_update(const espos_sk_update_t* u, void* arg) {
             if (end != v.c_str() && std::isfinite(n)) {
               lv_subject_set_int(
                   s, (int)std::clamp(n, (double)INT_MIN, (double)INT_MAX));
-            } else {
-              fresh = false;
             }
           }
           break;
@@ -98,11 +113,15 @@ void on_update(const espos_sk_update_t* u, void* arg) {
           break;
         }
       }
-      if (fresh) entry->stream_rx_us = rx_us;
     });
   } else if (u->meta_json) {
     // raw meta object {units, description, zones, ...}: ZoneRegistry parses it
     std::string m(u->meta_json);
+    // As for values: zones from the stream are newer than a REST meta
+    // whose GET started earlier. A meta without zones leaves them alone.
+    if (m.find("\"zones\"") != std::string::npos) {
+      entry->zones_rx_us = esp_timer_get_time();
+    }
     std::string p(u->path);
     cockpit_hal::ui::post([p, m = std::move(m)]() {
       JsonDocument doc;
@@ -223,9 +242,15 @@ bool SubjectRegistry::accept_seed(const std::string& path, int64_t requested_us)
   return true;
 }
 
+bool SubjectRegistry::accept_meta(const std::string& path,
+                                  int64_t requested_us) const {
+  auto it = map_.find(path);
+  return it == map_.end() || it->second.entry->zones_rx_us <= requested_us;
+}
+
 int64_t SubjectRegistry::stream_rx_us(const std::string& path) const {
   auto it = map_.find(path);
-  return it == map_.end() ? 0 : it->second.entry->stream_rx_us;
+  return it == map_.end() ? 0 : it->second.entry->stream_rx_us.load();
 }
 
 std::vector<std::string> SubjectRegistry::paths() const {
@@ -252,6 +277,7 @@ void SubjectRegistry::garbage_collect(
       // Its value goes stale from here; a later layout's REST seed may
       // replace it again.
       slot.entry->stream_rx_us = 0;
+      slot.entry->zones_rx_us = 0;
       slot.entry->seed_req_us = 0;
     } else if (live && slot.sub_handle <= 0 && !is_local_sentinel(kv.first)) {
       slot.sub_handle = espos_sk_subscribe(kv.first.c_str(), kListenPeriodMs, on_update, slot.entry.get());
