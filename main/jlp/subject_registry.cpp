@@ -51,6 +51,12 @@ Reading read_delta(SubjectKind kind, const std::string& v) {
       r.ok = end != v.c_str() && std::isfinite(r.f);
       break;
     case SubjectKind::Int:
+      // A toggle is Int-backed and Signal K sends a switch state as true or
+      // false; those are 1 and 0, not text that is no number.
+      if (v == "true" || v == "false") {
+        r.n = v == "true" ? 1.0 : 0.0;
+        break;
+      }
       // Read as a JSON number, not just its leading integer digits: 1e3 is
       // 1000. A fraction is cut toward zero.
       r.n = strtod(v.c_str(), &end);
@@ -80,7 +86,10 @@ void on_update(const espos_sk_update_t* u, void* arg) {
     // applied on the UI task while this delta waits in the queue must
     // already see it as newer.
     if (r.ok) entry->stream_rx_us = rx_us;
-    cockpit_hal::ui::post([entry, v = std::move(v), r]() {
+    cockpit_hal::ui::post([entry, v = std::move(v), r, rx_us]() {
+      // A REST seed whose GET started after this delta arrived was applied
+      // while it waited in the queue; it is the newer reading.
+      if (entry->seed_req_us > rx_us) return;
       lv_subject_t* s = entry->subject;
       switch (entry->kind) {
         case SubjectKind::Float:
@@ -129,7 +138,12 @@ void on_update(const espos_sk_update_t* u, void* arg) {
     // the mark alone.
     if ((*doc)["zones"].is<JsonArrayConst>()) entry->zones_rx_us = rx_us;
     std::string p(u->path);
-    cockpit_hal::ui::post([p, doc]() { zones().apply_meta(p, doc->as<JsonObjectConst>()); });
+    cockpit_hal::ui::post([entry, p, doc, rx_us]() {
+      // Zones from a REST GET that started after this arrived were applied
+      // while it waited in the queue; only its description still counts.
+      if (entry->zones_req_us > rx_us) doc->remove("zones");
+      zones().apply_meta(p, doc->as<JsonObjectConst>());
+    });
   }
 }
 

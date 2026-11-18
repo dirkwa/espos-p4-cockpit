@@ -189,8 +189,11 @@ void fetch_task(void* arg) {
             lv_subject_set_float(sub, (float)vr.i);
           }
           break;
-        case SubjectKind::Int:
         case SubjectKind::Bool:
+          // On only for true or 1, as the stream reads a Bool path.
+          lv_subject_set_int(sub, (vr.is_float ? vr.d == 1.0 : vr.i == 1) ? 1 : 0);
+          break;
+        case SubjectKind::Int:
           // Coerce a float reading (SK may report an int path's value
           // as 5.0) so the seed isn't silently dropped — mirrors the
           // int→float coercion the Float case does.
