@@ -154,9 +154,13 @@ void fetch_task(void* arg) {
   // Single hop onto the UI task to apply the whole batch.
   cockpit_hal::ui::post([metas, values]() {
     for (auto& m : *metas) {
-      // Zones the stream sent after this GET started are newer; an older
-      // answer, an empty array above all, must not replace them.
-      if (!registry().accept_meta(m.path, m.requested_us)) continue;
+      // Zones the stream sent after this GET started, or a later GET's that
+      // were applied, are newer; an older answer, an empty array above all,
+      // must not replace them. Its description still applies.
+      if (m.doc["zones"].is<JsonArrayConst>() &&
+          !registry().accept_zones(m.path, m.requested_us)) {
+        m.doc.remove("zones");
+      }
       zones().apply_meta(m.path, m.doc.as<JsonObjectConst>());
     }
     for (auto& vr : *values) {

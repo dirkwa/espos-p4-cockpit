@@ -38,6 +38,9 @@ struct SubjectEntry {
   // The same for the last stream meta that carried zones: an older REST
   // meta must not replace them. A meta without zones does not count.
   std::atomic<int64_t> zones_rx_us{0};
+  // When the GET of the REST zones last applied started, 0 for none. UI
+  // task only.
+  int64_t zones_req_us = 0;
   // When the GET of the last applied REST seed started, 0 for none. Two
   // fetches can overlap (boot layout and stream up); the older answer must
   // not replace the newer one. UI task only.
@@ -73,10 +76,12 @@ class SubjectRegistry {
    *  newer. Records it as the applied seed when it may. False for an
    *  unknown path. UI task only. */
   bool accept_seed(const std::string& path, int64_t requested_us);
-  /** Whether a REST meta whose GET started at `requested_us` may set the
-   *  path's zones: not when stream meta with zones arrived after that.
-   *  True for a path not in the registry. UI task only. */
-  bool accept_meta(const std::string& path, int64_t requested_us) const;
+  /** Whether the zones of a REST meta whose GET started at `requested_us`
+   *  may be applied: not when stream meta with zones arrived after that, or
+   *  zones from a REST GET that started later were applied. Records them
+   *  as applied when they may. True for a path not in the registry. UI
+   *  task only. */
+  bool accept_zones(const std::string& path, int64_t requested_us);
   std::vector<std::string> paths() const;
 
   // Unsubscribe paths not in `live_paths` (subjects are kept).
