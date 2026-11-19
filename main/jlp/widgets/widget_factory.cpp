@@ -1773,9 +1773,9 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
 //   - PRESSED fires put(press_value) if hold_ms == 0; else starts a
 //     timer that fires the PUT after hold_ms. A visual fill animates
 //     during the hold so the operator sees the latch loading.
-//   - RELEASED fires put(release_value) if release_value is set AND
-//     the press already fired. Releasing during a pending hold
-//     cancels the press timer with no PUT (intended).
+//   - RELEASED or PRESS_LOST fires put(release_value) if release_value
+//     is set AND the press already fired. Either event during a pending
+//     hold cancels the press timer with no PUT (intended).
 //
 // Value typing: press_value / release_value can be a bool, integer,
 // float, or string in the JSON spec. We route to the matching put_*
@@ -1889,6 +1889,9 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_label_set_text(lbl, caption);
   lv_obj_center(lbl);
 
+  // Sent on touch-down, a press must not also turn the page.
+  if (hold_ms == 0) mark_press_keeper(root);
+
   auto* bctx = new ButtonCtx{path, press_json, release_json, hold_ms,
                              nullptr, root, false};
   lv_obj_set_user_data(root, bctx);
@@ -1929,34 +1932,28 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       },
       LV_EVENT_PRESSED, bctx);
 
-  lv_obj_add_event_cb(
-      root,
-      [](lv_event_t* e) {
-        auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
-        lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
-        if (c->hold_timer) {
-          // Released before hold expired: cancel, no PUT.
-          lv_timer_delete(c->hold_timer);
-          c->hold_timer = nullptr;
-          return;
-        }
-        if (c->press_fired) {
-          button_fire(c->path, c->release_json, false);
-        }
-      },
-      LV_EVENT_RELEASED, bctx);
-  // PRESS_LOST handled like RELEASED (touch off the widget).
-  lv_obj_add_event_cb(
-      root,
-      [](lv_event_t* e) {
-        auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
-        lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
-        if (c->hold_timer) {
-          lv_timer_delete(c->hold_timer);
-          c->hold_timer = nullptr;
-        }
-      },
-      LV_EVENT_PRESS_LOST, bctx);
+  // PRESS_LOST ends the press like RELEASED. A finger that slides off
+  // keeps the press (LVGL's press lock), so it comes only when the panel
+  // takes the press away with lv_indev_wait_release: a page swipe, a
+  // page change, the settings menu, a layout swap. RELEASED never follows
+  // then, so a press already sent gets its release here, or the value
+  // would stay pressed.
+  auto release_cb = [](lv_event_t* e) {
+    auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
+    lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
+    if (c->hold_timer) {
+      // Released before hold expired: cancel, no PUT.
+      lv_timer_delete(c->hold_timer);
+      c->hold_timer = nullptr;
+      return;
+    }
+    if (c->press_fired) {
+      c->press_fired = false;
+      button_fire(c->path, c->release_json, false);
+    }
+  };
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_RELEASED, bctx);
+  lv_obj_add_event_cb(root, release_cb, LV_EVENT_PRESS_LOST, bctx);
 
   return root;
 }

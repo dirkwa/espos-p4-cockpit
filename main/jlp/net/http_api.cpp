@@ -837,6 +837,8 @@ esp_err_t hello_get(httpd_req_t* req) {
   }
   display["idle_timeout"] = true;
   display["idle_dim_pct"] = true;
+  JsonArray tab_strip = display["tab_strip"].to<JsonArray>();
+  for (const char* mode : kTabStripModes) tab_strip.add(mode);
   // Theme modes `theme.mode` accepts, and the one on screen now.
   JsonArray themes = display["themes"].to<JsonArray>();
   for (const char* t : {"auto", "day", "dark", "night"}) themes.add(t);
