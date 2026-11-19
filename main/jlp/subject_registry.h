@@ -45,6 +45,22 @@ struct SubjectEntry {
   // fetches can overlap (boot layout and stream up); the older answer must
   // not replace the newer one. UI task only.
   int64_t seed_req_us = 0;
+  // Counts the subscriptions ended for this path. espos_sk_unsubscribe()
+  // does not wait for a callback the stream task has already picked, so a
+  // callback of an ended subscription can still run, even after a later
+  // layout subscribed the path again; it carries the count of its own
+  // subscription and is ignored when that is no longer this one. Written
+  // on the UI task.
+  std::atomic<uint32_t> sub_gen{0};
+};
+
+// What an espOS subscription's callback gets: the entry, and the entry's
+// sub_gen when the subscription was made.
+struct SubCtx {
+  SubjectEntry* entry = nullptr;
+  std::atomic<uint32_t> gen{0};
+  // When its subscription ended, 0 while it runs. UI task only.
+  int64_t ended_us = 0;
 };
 
 // Maps a widget bind -> lv_subject_t. Subjects are created lazily by
@@ -92,7 +108,13 @@ class SubjectRegistry {
   struct Slot {
     std::unique_ptr<SubjectEntry> entry;
     int sub_handle = 0;   // espos_sk subscription (0 = none)
+    // The contexts of this path's subscriptions. One whose subscription
+    // ended is not freed, as a late callback may still read it; it is
+    // used again once none can (kCtxReuseUs), so these stay few.
+    std::vector<std::unique_ptr<SubCtx>> ctxs;
+    SubCtx* live_ctx = nullptr;  // the running subscription's
   };
+  static int subscribe(const std::string& path, Slot& slot);
   std::unordered_map<std::string, Slot> map_;
 };
 
