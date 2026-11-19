@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.7.0...v1.8.0) (2026-11-19)
+
+
+### Added
+
+* **layout:** tab strip as overlay, page swipes ([#211](https://github.com/dirkwa/espos-p4-cockpit/issues/211)) ([23ea06d](https://github.com/dirkwa/espos-p4-cockpit/commit/23ea06d93c78d71c25e2e220bd407f6c198007c7))
+
+
+### Fixed
+
+* bump espOS to v0.29.2 ([#219](https://github.com/dirkwa/espos-p4-cockpit/issues/219)) ([905d20b](https://github.com/dirkwa/espos-p4-cockpit/commit/905d20b7b1fbc30d162e98cece85495b15d5abdf))
+* bump espOS to v0.29.3 ([#222](https://github.com/dirkwa/espos-p4-cockpit/issues/222)) ([fa57573](https://github.com/dirkwa/espos-p4-cockpit/commit/fa57573641997017db9e6511d55dc0b0617af559))
+* **jlp:** harden incoming signal k values ([#202](https://github.com/dirkwa/espos-p4-cockpit/issues/202)) ([8947f75](https://github.com/dirkwa/espos-p4-cockpit/commit/8947f75d3314d64dbdd385b37b185fbe33699d58))
+* **jlp:** ignore callbacks of ended subscriptions ([#221](https://github.com/dirkwa/espos-p4-cockpit/issues/221)) ([274189e](https://github.com/dirkwa/espos-p4-cockpit/commit/274189e28b17d48038fcd02f962dfdde56341fa3))
+
 ## [1.7.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.6.0...v1.7.0) (2026-11-14)
 
 
