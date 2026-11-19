@@ -659,6 +659,13 @@ ApplyResult LayoutManager::apply_impl(const std::string& json, ApplySource src,
   // A swipe in progress belongs to the old layout: further movement must
   // not turn a page of the new one.
   cancel_swipe();
+  // A held widget is deleted with the old layout, and a deleted button
+  // sends no release: a button that has sent its press value would leave
+  // it pressed. End the press while the widget still exists.
+  if (press_on_layout_ && indev_ != nullptr &&
+      lv_indev_get_state(indev_) == LV_INDEV_STATE_PRESSED) {
+    end_press();
+  }
 
   lv_obj_t* old_root = current_root_;
   lv_obj_set_hidden(staging, false);

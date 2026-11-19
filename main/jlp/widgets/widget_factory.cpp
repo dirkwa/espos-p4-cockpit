@@ -1935,9 +1935,9 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // PRESS_LOST ends the press like RELEASED. A finger that slides off
   // keeps the press (LVGL's press lock), so it comes only when the panel
   // takes the press away with lv_indev_wait_release: a page swipe, a
-  // page change, the settings menu. RELEASED never follows then, so a
-  // press already sent gets its release here, or the value would stay
-  // pressed.
+  // page change, the settings menu, a layout swap. RELEASED never follows
+  // then, so a press already sent gets its release here, or the value
+  // would stay pressed.
   auto release_cb = [](lv_event_t* e) {
     auto* c = static_cast<ButtonCtx*>(lv_event_get_user_data(e));
     lv_obj_set_style_bg_opa(c->root, LV_OPA_COVER, LV_PART_MAIN);
