@@ -290,6 +290,14 @@ jobs:
           # omits it is how a panel is sent firmware for a different display.
           cp p4_cockpit-merged.bin "dist/p4_cockpit-${VERSION}-${BOARD}-merged.bin"
           cp build/cockpit.bin     "dist/p4_cockpit-${VERSION}-${BOARD}-ota.bin"
+          # A core dump from a panel in the field names its ELF only by SHA
+          # (/api/v1/system/coredump: app_elf_sha256, 9 hex digits), and
+          # decoding it needs that exact file. The SHA is in the name so a
+          # re-run, which builds a new ELF, adds one instead of replacing the
+          # file panels flashed earlier still need. Not .bin, so the mirror and
+          # the registry, which take *.bin and -ota/-merged.bin, leave it alone.
+          ELF_SHA=$(sha256sum build/cockpit.elf | cut -c1-9)
+          cp build/cockpit.elf     "dist/p4_cockpit-${VERSION}-${BOARD}-${ELF_SHA}.elf"
           # Apache-2.0 4(a): whoever downloads only a binary still gets the
           # licence, and the notices name the model licence esp-sr ships under.
           cp LICENSE THIRD-PARTY-NOTICES.md dist/
@@ -735,6 +743,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/*.bin
+            dist/*.elf
             dist/LICENSE
             dist/THIRD-PARTY-NOTICES.md
           body: ${{ steps.notes.outputs.body }}
