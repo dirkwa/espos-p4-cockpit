@@ -3,17 +3,23 @@
 #include <ArduinoJson.h>
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
+#include "espos_httpd.h"
 #include "espos_cfg_keys.h"
 #include "espos_config.h"
 #include "espos_sk.h"
 #include "espos_wifi.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_heap_caps.h"
 #include "esp_jpeg_enc.h"
 #include "esp_timer.h"
 #include "lvgl.h"
+#include <sys/socket.h>
+
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -49,13 +55,13 @@ namespace {
 constexpr size_t kMaxBodyBytes = 64 * 1024;
 
 // Seconds a whole request body may take before the handler gives up with
-// 408. One httpd task serves every request, and lru_purge cannot reclaim a
-// socket whose handler is running, so a client that sends a Content-Length
-// and then stops, or trickles a byte every few seconds, blocks the whole
-// API, the designer's mirror included. The deadline covers the whole body;
-// a single receive can still wait this long past it, so the worst case is
-// twice this. A 64 KB layout on the LAN arrives in well under a second;
-// twice this stays below the designer's 30 s proxy timeout.
+// 408. The worker serves these requests one at a time and the LRU purge
+// skips a detached socket, so a client that sends a Content-Length and then
+// stops, or trickles a byte every few seconds, blocks the whole layout API,
+// the designer's mirror included. The deadline covers the whole body; a
+// single receive can still wait the espOS httpd's receive timeout (5 s) past
+// it. A 64 KB layout on the LAN arrives in well under a second, and the worst
+// case stays below the designer's 30 s proxy timeout.
 constexpr int kRecvWaitS = 10;
 
 // What a handler waits on while its lambda runs on the UI task. Shared with
@@ -104,6 +110,32 @@ bool recv_body(httpd_req_t* req, std::string* body) {
   return true;
 }
 
+// Discards a body the handler will not read, so its error answer reaches the
+// client before the connection closes: closing over unread data sends a RST,
+// and the client loses the answer with it. Bounded like espOS's own
+// espos_httpd_read_body; past that the RST is acceptable. Sets
+// Connection: close, since the handler then returns ESP_FAIL.
+void drain_body(httpd_req_t* req) {
+  char sink[256];
+  size_t done = 0;
+  const size_t total = req->content_len;
+  while (done < total && done < 4 * kMaxBodyBytes) {
+    const size_t want = std::min(sizeof(sink), total - done);
+    const int n = httpd_req_recv(req, sink, want);
+    if (n <= 0) break;
+    done += (size_t)n;
+  }
+  httpd_resp_set_hdr(req, "Connection", "close");
+}
+
+// A cross-site form post cannot set this content type without a preflight,
+// which is what espOS's state-changing endpoints rely on (espos_httpd.h).
+bool require_json_or_close(httpd_req_t* req) {
+  if (espos_httpd_require_json(req)) return true;
+  drain_body(req);
+  return false;
+}
+
 esp_err_t layout_post(httpd_req_t* req) {
   if (req->content_len == 0) {
     httpd_resp_set_status(req, "400 Bad Request");
@@ -111,10 +143,12 @@ esp_err_t layout_post(httpd_req_t* req) {
     return ESP_OK;
   }
   if ((size_t)req->content_len > kMaxBodyBytes) {
+    drain_body(req);
     httpd_resp_set_status(req, "413 Payload Too Large");
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"body too large\"}");
-    return ESP_OK;
+    return ESP_FAIL;
   }
+  if (!require_json_or_close(req)) return ESP_FAIL;
 
   std::string body;
   if (!recv_body(req, &body)) return ESP_FAIL;
@@ -653,10 +687,12 @@ static esp_err_t screen_post(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json");
 
   if (req->content_len <= 0 || req->content_len > 256) {
+    if (req->content_len > 0) drain_body(req);
     httpd_resp_set_status(req, "400 Bad Request");
     httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"body must be 1..256 bytes\"}");
-    return ESP_OK;
+    return req->content_len > 0 ? ESP_FAIL : ESP_OK;
   }
+  if (!require_json_or_close(req)) return ESP_FAIL;
 
   std::string body;
   if (!recv_body(req, &body)) return ESP_FAIL;
@@ -929,110 +965,150 @@ esp_err_t stream_soak_get(httpd_req_t* req) {
   return ESP_OK;
 }
 
+// The espOS httpd serves every request of the device on one task. A layout
+// apply can wait up to 28 s for the UI task and a screenshot up to 5 s, which
+// would stall the web UI, /api/v1 and OTA for as long. These handlers are
+// detached from that task (httpd_req_async_handler_begin) and run here, one
+// at a time, as they did on the layout API's own httpd before.
+struct Job {
+  httpd_req_t* req;
+  esp_err_t (*handler)(httpd_req_t*);
+};
+
+// What a route registers as its user_ctx: the handler the worker runs.
+struct Deferred {
+  esp_err_t (*handler)(httpd_req_t*);
+};
+// A detached socket is out of the server's LRU purge, and the espOS httpd
+// has 7 (3 of them event streams). One running and two waiting leaves the
+// web UI a socket even with every event stream open; a fourth gets 503.
+constexpr UBaseType_t kJobQueueDepth = 2;
+QueueHandle_t g_jobs = nullptr;
+
+// The old layout API httpd waited 30 s on a send; the espOS httpd waits 5.
+// A BMP screenshot is 1.2 MB, and one send can stall that long on a hosted
+// link carrying a video stream. Raised for the detached request only.
+constexpr int kSendWaitS = 30;
+
+void worker_task(void*) {
+  Job job;
+  for (;;) {
+    if (xQueueReceive(g_jobs, &job, portMAX_DELAY) != pdTRUE) continue;
+    httpd_req_t* req = job.req;
+    const int fd = httpd_req_to_sockfd(req);
+    timeval was{};
+    socklen_t was_len = sizeof(was);
+    const bool have_was =
+        getsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &was, &was_len) == 0;
+    const timeval slow{kSendWaitS, 0};
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &slow, sizeof(slow));
+
+    esp_err_t err;
+    if (req->method == HTTP_GET && req->content_len > 0) {
+      // A GET handler never reads a body, and a detached request's is not
+      // drained for it: the server would read it as the next request.
+      drain_body(req);
+      err = job.handler(req);
+      if (err == ESP_OK) err = ESP_FAIL;
+    } else {
+      err = job.handler(req);
+    }
+
+    if (have_was) setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &was, sizeof(was));
+    // ESP_FAIL: the handler gave up on the connection, as a synchronous
+    // handler does by returning it. Shutting the socket down while this
+    // request still owns the session makes the server see the end of the
+    // stream and close it itself, so no close can reach a session that a
+    // new connection has taken over in between.
+    if (err != ESP_OK) shutdown(fd, SHUT_RDWR);
+    httpd_req_async_handler_complete(req);
+  }
+}
+
+esp_err_t defer_to_worker(httpd_req_t* req) {
+  const auto* deferred = static_cast<const Deferred*>(req->user_ctx);
+  // Answered here, synchronously, so the server drains any body after the
+  // handler returns. The server task is the only producer, so a free slot
+  // stays free until the send.
+  if (uxQueueSpacesAvailable(g_jobs) == 0) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_hdr(req, "Retry-After", "1");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"busy\"}");
+    return ESP_OK;
+  }
+  httpd_req_t* copy = nullptr;
+  if (httpd_req_async_handler_begin(req, &copy) != ESP_OK) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_hdr(req, "Retry-After", "1");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"out of memory\"}");
+    return ESP_OK;
+  }
+  const Job job{copy, deferred->handler};
+  xQueueSend(g_jobs, &job, 0);
+  return ESP_OK;
+}
+
 }  // namespace
 
-void http_api_start(uint16_t port) {
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = port;
-  config.stack_size = 8192;
-  config.ctrl_port = 32768 + port;  // unique per httpd instance
-  config.recv_wait_timeout = kRecvWaitS;
-  config.send_wait_timeout = 30;
-  config.lru_purge_enable = true;
-  // Keep ahead of the registrations below (9 today) — httpd aborts with
-  // ESP_ERR_HTTPD_HANDLERS_FULL at boot the moment this is exceeded.
-  config.max_uri_handlers = 12;
-
-  httpd_handle_t server = nullptr;
-  if (httpd_start(&server, &config) != ESP_OK) {
-    ESP_LOGE(TAG, "failed to start jlp api on port %u", port);
-    return;
+void http_api_register() {
+  if (!g_jobs) {
+    g_jobs = xQueueCreate(kJobQueueDepth, sizeof(Job));
+    if (!g_jobs) {
+      ESP_LOGE(TAG, "layout api: no memory for the job queue");
+      return;
+    }
+    // Internal RAM: the handlers send from this stack, and the old layout
+    // API httpd ran them on 8 KB too.
+    if (xTaskCreate(worker_task, "jlp_http", 8192, nullptr, 5, nullptr) !=
+        pdPASS) {
+      ESP_LOGE(TAG, "layout api: worker task not started");
+      vQueueDelete(g_jobs);
+      g_jobs = nullptr;
+      return;
+    }
   }
 
-  httpd_uri_t layout_uri = {
-      .uri = "/layout",
-      .method = HTTP_POST,
-      .handler = layout_post,
-      .user_ctx = nullptr,
+  // Routes that wait on the UI task, touch the audio driver or send
+  // megabytes run on the worker; /healthz and /beep (which only queues a
+  // clip) answer inline. /hello and /healthz are public so
+  // discovery works on a device with an API key; everything else needs the
+  // key once one is set (docs/security.md in espOS).
+  struct Route {
+    const char* uri;
+    httpd_method_t method;
+    Deferred handler;
+    bool deferred;
+    uint32_t flags;
   };
-  httpd_register_uri_handler(server, &layout_uri);
-
-  httpd_uri_t screen_uri = {
-      .uri = "/screen",
-      .method = HTTP_POST,
-      .handler = screen_post,
-      .user_ctx = nullptr,
+  static const Route kRoutes[] = {
+      {"/hello", HTTP_GET, {hello_get}, true, ESPOS_HTTPD_PUBLIC},
+      {"/healthz", HTTP_GET, {healthz_get}, false, ESPOS_HTTPD_PUBLIC},
+      {"/layout", HTTP_POST, {layout_post}, true, ESPOS_HTTPD_PROTECTED},
+      {"/screen", HTTP_POST, {screen_post}, true, ESPOS_HTTPD_PROTECTED},
+      {"/screenshot", HTTP_GET, {screenshot_get}, true, ESPOS_HTTPD_PROTECTED},
+      {"/beep", HTTP_GET, {beep_get}, false, ESPOS_HTTPD_PROTECTED},
+      {"/mic_probe", HTTP_GET, {mic_probe_get}, true, ESPOS_HTTPD_PROTECTED},
+      {"/mic_probe4", HTTP_GET, {mic_probe4_get}, true, ESPOS_HTTPD_PROTECTED},
+      {"/mic_gain", HTTP_GET, {mic_gain_get}, true, ESPOS_HTTPD_PROTECTED},
+      {"/stream_soak", HTTP_GET, {stream_soak_get}, true, ESPOS_HTTPD_PROTECTED},
   };
-  httpd_register_uri_handler(server, &screen_uri);
-
-  httpd_uri_t hz_uri = {
-      .uri = "/healthz",
-      .method = HTTP_GET,
-      .handler = healthz_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &hz_uri);
-
-  httpd_uri_t hello_uri = {
-      .uri = "/hello",
-      .method = HTTP_GET,
-      .handler = hello_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &hello_uri);
-
-  httpd_uri_t screenshot_uri = {
-      .uri = "/screenshot",
-      .method = HTTP_GET,
-      .handler = screenshot_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &screenshot_uri);
-
-  httpd_uri_t beep_uri = {
-      .uri = "/beep",
-      .method = HTTP_GET,
-      .handler = beep_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &beep_uri);
-
-  httpd_uri_t mic_probe_uri = {
-      .uri = "/mic_probe",
-      .method = HTTP_GET,
-      .handler = mic_probe_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &mic_probe_uri);
-
-  httpd_uri_t mic_probe4_uri = {
-      .uri = "/mic_probe4",
-      .method = HTTP_GET,
-      .handler = mic_probe4_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &mic_probe4_uri);
-
-  httpd_uri_t mic_gain_uri = {
-      .uri = "/mic_gain",
-      .method = HTTP_GET,
-      .handler = mic_gain_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &mic_gain_uri);
-
-  httpd_uri_t stream_soak_uri = {
-      .uri = "/stream_soak",
-      .method = HTTP_GET,
-      .handler = stream_soak_get,
-      .user_ctx = nullptr,
-  };
-  httpd_register_uri_handler(server, &stream_soak_uri);
-
-  ESP_LOGI(
-      TAG,
-      "jlp api on :%u (POST /layout, GET /hello, /healthz, /screenshot)",
-      port);
+  for (const Route& r : kRoutes) {
+    httpd_uri_t uri = {};
+    uri.uri = r.uri;
+    uri.method = r.method;
+    uri.handler = r.deferred ? defer_to_worker : r.handler.handler;
+    // kRoutes is static, so the entry outlives the server that points at it.
+    uri.user_ctx = r.deferred ? const_cast<Deferred*>(&r.handler) : nullptr;
+    const esp_err_t err = espos_httpd_register_ex(&uri, r.flags);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "layout api: %s not registered: %s", r.uri,
+               esp_err_to_name(err));
+    }
+  }
+  ESP_LOGI(TAG, "layout api on the espOS httpd (POST /layout, GET /hello, "
+                "/healthz, /screenshot)");
 }
 
 }  // namespace jlp

@@ -9,7 +9,9 @@ Reference implementation: this firmware. Any device that obeys this contract is 
 A JLP device announces itself on the local network via mDNS:
 
 - **Service:** `_signalk-player._tcp`
-- **Port:** the JLP HTTP API port (default 8081 on the reference firmware).
+- **Port:** the JLP HTTP API port. The reference firmware serves it from the
+  device's own web server, port 80 by default (espOS `httpd.port`); older
+  firmware ran a separate server on 8081.
 - **TXT records:**
   - `schema=1` — wire protocol version.
   - `widgets=label,toggle,arc,bar` — comma-separated widget kinds the device implements.
@@ -20,7 +22,24 @@ Hosts iterate `_signalk-player._tcp.local` results and confirm capabilities with
 
 ## HTTP endpoints
 
-All endpoints live on the same TCP port. The reference firmware uses **8081**.
+All endpoints live on the same TCP port, the one the mDNS record advertises. The reference firmware serves them next to its web UI and `/api/v1` on **80**.
+
+### Authentication
+
+On the reference firmware the JLP API follows the device's REST
+authentication (espOS `docs/security.md`). A device without an API key
+answers everyone, as before. Once `httpd.api_key` is set, every endpoint
+except `GET /hello` and `GET /healthz` needs `Authorization: Bearer <key>`
+(or the web UI's session cookie) and answers `401` without it. `/hello` and
+`/healthz` stay open so a host can discover and identify the device before it
+has a key.
+
+A request the device cannot take on because its layout API is busy is
+answered `503` with `Retry-After: 1`.
+
+`POST /layout` and `POST /screen` take `Content-Type: application/json` only
+and answer `415` otherwise, so a web page cannot post to the panel through a
+browser on the boat network.
 
 ### `GET /hello`
 
@@ -128,8 +147,8 @@ is no lock-out window.
 single-screen layout) and `screens` (all ids in tab order), so a caller
 can read the helm's state before changing it and restore it afterwards.
 
-> This endpoint is unauthenticated, like the rest of the JLP API. Anything
-> on the boat network can drive the display. See espOS issue #2.
+> Without an API key on the device, anything on the boat network can drive
+> the display. With one set, this endpoint needs it (see Authentication).
 
 ### `GET /healthz`
 
@@ -414,9 +433,9 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
   shown at native size, not scaled. Frames that are not exactly panel-sized
   are rejected (counted as decode errors) — they would render as garbage
   rows and break the touch mapping.
-- Trust model: `host`/`port`/`touch_port` come from the layout JSON, which —
-  like everything on `:8081` — is unauthenticated by design (boat-LAN trust,
-  same as `POST /layout` itself). The override exists so a dedicated capture
+- Trust model: `host`/`port`/`touch_port` come from the layout JSON, which
+  is exactly as trusted as `POST /layout` itself (open on a device without an
+  API key, key-protected with one). The override exists so a dedicated capture
   box can serve the stream; anyone who can push a layout can already replace
   the whole UI, so the stream fields add no new trust boundary.
 - Extra fields:

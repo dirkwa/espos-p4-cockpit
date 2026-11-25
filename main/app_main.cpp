@@ -7,8 +7,8 @@
  * and the device watchdog policy (lowMemory, taskStalled, netDown,
  * skLinkStalled). This file wires the panel on top: display + LVGL
  * (cockpit_hal), the speaker/mics and the voice satellite, the JSON Layout
- * Player (jlp/) with its layout push API on :8081, the NMEA 2000 gateway
- * and the status/alert overlays.
+ * Player (jlp/) with its layout push API on the espOS httpd, the NMEA 2000
+ * gateway and the status/alert overlays.
  */
 #include <cstring>
 #include <cstdio>
@@ -384,10 +384,10 @@ extern "C" void app_main(void) {
    * signalk-espOS/espOS#15. */
   espos_n2k_api_register(&n2k_rx);
 
-  // ---- the layout push API (designer) on its own port + mDNS
-  int32_t api_port = 8081;
-  espos_config_get_i32(ESPOS_CFG_NS_COCKPIT, ESPOS_CFG_COCKPIT_API_PORT, &api_port);
-  jlp::http_api_start((uint16_t)api_port);
+  // ---- the layout push API (designer) on the espOS httpd + mDNS
+  jlp::http_api_register();
+  int32_t http_port = 80;
+  espos_config_get_i32(ESPOS_CFG_NS_HTTPD, ESPOS_CFG_HTTPD_PORT, &http_port);
   // Keep widgets + firmware in lockstep with /hello in http_api.cpp. mDNS
   // browsers use these for capability discovery before falling back to a
   // real /hello fetch. Canonical kinds only, for the same reason /hello
@@ -407,7 +407,7 @@ extern "C" void app_main(void) {
       fw_txt,
       "api=/layout,/hello,/healthz,/screenshot",
   };
-  esp_err_t merr = espos_mdns_add_service("_signalk-player", "_tcp", (uint16_t)api_port, kPlayerTxt,
+  esp_err_t merr = espos_mdns_add_service("_signalk-player", "_tcp", (uint16_t)http_port, kPlayerTxt,
                                           sizeof(kPlayerTxt) / sizeof(kPlayerTxt[0]));
   if (merr != ESP_OK) ESP_LOGW(TAG, "_signalk-player._tcp not advertised: %s", esp_err_to_name(merr));
   // Network is up (lwIP initialised by espOS): safe to open the satellite's

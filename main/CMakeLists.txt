@@ -7,7 +7,7 @@ idf_component_register(
     SRCS app_main.cpp ${jlp_sources}
     INCLUDE_DIRS "."
     PRIV_REQUIRES cockpit_hal espos_core espos_event espos_health espos_audio espos_voice espos_n2k
-                  esp_app_format espos_config espos_wifi espos_sk espos_ota
+                  esp_app_format espos_config espos_httpd espos_wifi espos_sk espos_ota
                   lvgl__lvgl esp_http_server esp_timer nvs_flash
                   bblanchon__arduinojson espressif__esp_new_jpeg esp_driver_jpeg mbedtls)
 

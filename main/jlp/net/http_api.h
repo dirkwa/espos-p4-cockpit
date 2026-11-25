@@ -1,16 +1,15 @@
 #pragma once
 
-#include <stdint.h>
-
 namespace espos_voice {
 class WyomingSatellite;
 }
 
 namespace jlp {
 
-// Starts the layout-player HTTP API on `port`. Currently exposes
-// POST /layout. Future endpoints (GET /hello, /healthz) land here.
-void http_api_start(uint16_t port);
+// Registers the layout API (/hello, /layout, /screen, /screenshot, /healthz
+// and the audio and stream diagnostics) on the espOS httpd and starts the
+// worker task that runs its long handlers. Call after espos_start().
+void http_api_register();
 
 // Register the Wyoming voice satellite so /hello can report its status.
 // Null (the default) reports "unavailable".

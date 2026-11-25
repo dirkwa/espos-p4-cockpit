@@ -2,7 +2,7 @@
   "namespace": "cockpit",
   "version": 1,
   "title": "Cockpit",
-  "description": "Panel behaviour that is not part of a layout: brightness, theme, idle dimming, the layout push port.",
+  "description": "Panel behaviour that is not part of a layout: brightness, theme, idle dimming.",
   "keys": [
     {
       "name": "brightness",
@@ -39,16 +39,6 @@
       "max": 100,
       "unit": "%",
       "title": "Idle brightness"
-    },
-    {
-      "name": "api_port",
-      "type": "int",
-      "default": 8081,
-      "min": 1,
-      "max": 32767,
-      "title": "Layout API port",
-      "restart_required": true,
-      "description": "TCP port of the JSON Layout Player API the designer talks to (/layout, /hello, /screenshot)."
     },
     {
       "name": "wake_host",
