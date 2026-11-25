@@ -127,7 +127,13 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_obj_set_style_pad_row(root, 0, LV_PART_MAIN);
   }
 
+  // A null parent makes LVGL create a new screen instead of a child, so
+  // a failed allocation must fail the build: only a complete tree swaps in.
   lv_obj_t* strip = lv_obj_create(root);
+  if (strip == nullptr) {
+    *err = "out of memory";
+    return false;
+  }
   lv_obj_set_size(strip, lv_pct(100), strip_h);
   lv_obj_set_style_bg_color(strip, lv_color_hex(theme::palette().strip),
                             LV_PART_MAIN);
@@ -148,6 +154,10 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
   // Per-screen container above the strip, all sharing the same area.
   for (JsonObjectConst s : screens) {
     lv_obj_t* page = lv_obj_create(root);
+    if (page == nullptr) {
+      *err = "out of memory";
+      return false;
+    }
     lv_obj_set_width(page, lv_pct(100));
     if (sctx->overlay) {
       lv_obj_set_height(page, lv_pct(100));
@@ -178,6 +188,10 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     const char* title = s["title"] | (s["id"] | "?");
 
     lv_obj_t* btn = lv_obj_create(strip);
+    if (btn == nullptr) {
+      *err = "out of memory";
+      return false;
+    }
     lv_obj_set_flex_grow(btn, 1);
     lv_obj_set_height(btn, lv_pct(100));
     lv_obj_set_style_bg_color(btn, lv_color_hex(theme::palette().tab),
@@ -188,6 +202,10 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_obj_set_scrollable(btn, false);
 
     lv_obj_t* lbl = lv_label_create(btn);
+    if (lbl == nullptr) {
+      *err = "out of memory";
+      return false;
+    }
     lv_label_set_text(lbl, title);
     lv_obj_set_style_text_color(lbl, lv_color_hex(theme::palette().tab_fg),
                                 LV_PART_MAIN);
@@ -441,6 +459,12 @@ void LayoutPlayer::on_press_event(lv_event_t* e) {
 
 void LayoutPlayer::init(lv_obj_t* parent, ChromeHook chrome) {
   detach();
+  // A tree under another parent is the caller's to delete; the player
+  // forgets it rather than steer or peek into it.
+  if (parent != parent_) {
+    current_root_ = nullptr;
+    active_json_.clear();
+  }
   parent_ = parent;
   chrome_ = std::move(chrome);
   // Presses are watched on the input device, not on an object: a swipe
@@ -589,11 +613,10 @@ LayoutPlayer::Result LayoutPlayer::apply_impl(const std::string& json,
   lv_obj_set_scrollable(staging, false);
   lv_obj_set_hidden(staging, true);
 
-  // Screen background: `theme.bg`, or transparent (falls through to
-  // LVGL's default dark theme) when omitted. Set on the layout root
-  // itself rather than a global screen style, so it's swapped
-  // atomically with the rest of the layout and never bleeds into the
-  // next one.
+  // Screen background: `theme.bg`, else the palette's screen color, opaque
+  // either way (set below). It belongs to the staging root rather than a
+  // global screen style, so it swaps with the tree and never bleeds into
+  // the next layout.
   JsonObjectConst theme_spec = doc["theme"];
 
   // Theme mode and fg/accent — must run before build_screens() below so

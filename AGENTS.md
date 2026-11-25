@@ -199,7 +199,7 @@ LVGL is switched off). `managed_components/` is not committed.
 
 Each kind lives as a `build_<kind>(BuildCtx&, JsonObjectConst,
 std::string* err)` function in
-[widget_factory.cpp](src/jlp/widgets/widget_factory.cpp).
+[widget_factory.cpp](main/jlp/widgets/widget_factory.cpp).
 
 Mandatory:
 
