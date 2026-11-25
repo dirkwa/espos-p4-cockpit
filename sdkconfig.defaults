@@ -44,7 +44,16 @@ CONFIG_LWIP_TCP_WND_DEFAULT=65534
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
 CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
-CONFIG_LWIP_MAX_SOCKETS=16
+
+# ---- Sockets. espOS's 16 covers espOS alone; the panel adds the layout API
+# httpd (3 of its own + up to 7 clients), the Wyoming satellite (listener,
+# orchestrator, network wake: 3), the candump server (listener + 3 clients)
+# and the stream widget (TCP + touch UDP), about 34 in the worst case.
+# At 16, "Failed to create socket" and accept() ENFILE took the SignalK
+# stream down on a 7B in the field. TCP is capped separately and at the IDF
+# default of 16 too; all connections together can reach about 24.
+CONFIG_LWIP_MAX_SOCKETS=40
+CONFIG_LWIP_MAX_ACTIVE_TCP=32
 
 # ---- LVGL runs on its own task with a big stack; C++ app
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
