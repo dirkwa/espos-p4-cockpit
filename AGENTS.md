@@ -38,7 +38,8 @@ Companion projects:
 | [main/app_main.cpp](main/app_main.cpp)                | Boot: `espos_start()` with the panel as `before_network`, event handlers, N2K, API |
 | [main/jlp/](main/jlp/)                                | All player code                           |
 | [main/jlp/widgets/widget_factory.cpp](main/jlp/widgets/widget_factory.cpp) | Every widget kind in one file |
-| [main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp)   | Apply pipeline + atomic swap   |
+| [main/jlp/layout/layout_player.cpp](main/jlp/layout/layout_player.cpp)     | Parse, validate, build, atomic swap, tab strip and page swipes; shared with the WASM build |
+| [main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp)   | The device around the player: persistence, chrome, value seeding |
 | [main/jlp/net/http_api.cpp](main/jlp/net/http_api.cpp)                    | `/hello`, `/layout`, `/screenshot`, `/healthz` |
 | [main/jlp/notifications_registry.cpp](main/jlp/notifications_registry.cpp)| Notifications + ack state              |
 | [main/jlp/alert_overlay.cpp](main/jlp/alert_overlay.cpp)                  | Full-screen alarm modal                |
@@ -81,7 +82,15 @@ single feature.
 
 ## Pipeline: parse → validate → stage → swap → persist
 
-`LayoutManager::apply()` ([src/jlp/layout/layout_manager.cpp](src/jlp/layout/layout_manager.cpp)):
+`LayoutManager::apply()` ([main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp))
+drives `LayoutPlayer::apply()` ([main/jlp/layout/layout_player.cpp](main/jlp/layout/layout_player.cpp)),
+which does steps 1 to 5 and calls back for step 4. The WASM build
+compiles the player for the browser, so it may use only LVGL,
+ArduinoJson, the widget factory, the subject registry, the theme, the
+alert overlay's level policies (`alert_policy.h`) and the UI task's timers
+(`cockpit_hal::ui::every`/`cancel`), all of which that build provides.
+Anything that needs the device (LittleFS, the backlight, audio, espOS)
+belongs in the manager or in the chrome hook, never in the player.
 
 1. **Parse** the JSON via ArduinoJson, capped at 64 KB POST body.
 2. **Validate** schema version, widget kinds, duplicate ids, kind
@@ -190,7 +199,7 @@ LVGL is switched off). `managed_components/` is not committed.
 
 Each kind lives as a `build_<kind>(BuildCtx&, JsonObjectConst,
 std::string* err)` function in
-[widget_factory.cpp](src/jlp/widgets/widget_factory.cpp).
+[widget_factory.cpp](main/jlp/widgets/widget_factory.cpp).
 
 Mandatory:
 
@@ -207,7 +216,8 @@ Mandatory:
    you registered a `notifications().on_change(...)` observer, also
    call `off_change(token)` first.
 5. Add the kind to the `/hello` widgets dictionary in
-   [http_api.cpp](src/jlp/net/http_api.cpp) with its supported fields.
+   [widget_catalog.h](main/jlp/widgets/widget_catalog.h) with its
+   supported fields; the browser display reports the same catalog.
 6. Dispatch in `build_widget()` at the bottom of widget_factory.cpp.
 7. Document the kind in [JLP-PROTOCOL.md](JLP-PROTOCOL.md).
 

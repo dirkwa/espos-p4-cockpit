@@ -1,22 +1,15 @@
 #pragma once
 
 #include "lvgl.h"
-#include <atomic>
 #include <functional>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "../theme.h"
+#include "layout_player.h"
 
 namespace jlp {
-
-// tab_strip values this player draws: what the layout parser accepts
-// and what /hello advertises.
-inline constexpr const char* kTabStripFixed = "fixed";
-inline constexpr const char* kTabStripOverlayBottom = "overlay-bottom";
-inline constexpr const char* kTabStripModes[] = {kTabStripFixed,
-                                                 kTabStripOverlayBottom};
 
 enum class ApplySource { Boot, BootStore, BootDefault, PostLayout, BootFetched };
 
@@ -29,6 +22,8 @@ struct ApplyResult {
   std::string warning;    // non-fatal note, e.g. persistence failed
 };
 
+// The device around the layout player: persistence, the status strip, the
+// alert overlay, the backlight dimmer and value seeding after a swap.
 class LayoutManager {
  public:
   // `parent` is where the screens/tabview goes. Set once at boot.
@@ -60,7 +55,7 @@ class LayoutManager {
   void refresh_theme();
 
   // Theme the active layout was built in. Safe from any task.
-  theme::Mode built_mode() const { return built_mode_.load(); }
+  theme::Mode built_mode() const { return player_.built_mode(); }
 
   const std::string& active_name() const { return active_name_; }
   ApplySource active_source() const { return active_source_; }
@@ -72,16 +67,16 @@ class LayoutManager {
   //
   // UI TASK ONLY — all three touch LVGL. Callers on the HTTP task must
   // marshal with cockpit_hal::ui::post().
-  bool select_screen(const std::string& id);
+  bool select_screen(const std::string& id) { return player_.select_screen(id); }
 
   // Id of the screen currently shown; empty for a single-screen layout.
   // Lets a caller see what the helm is on before changing it, and put it
   // back afterwards.
-  std::string active_screen() const;
+  std::string active_screen() const { return player_.active_screen(); }
 
   // Screen ids of the active layout, in tab order. Empty when
   // single-screen.
-  std::vector<std::string> screen_ids() const;
+  std::vector<std::string> screen_ids() const { return player_.screen_ids(); }
 
   // Paths bound by the currently-applied layout. Used by boot to seed
   // the values of a layout that was applied (from the store) before the
@@ -89,31 +84,11 @@ class LayoutManager {
   const std::set<std::string>& known_paths() const { return known_paths_; }
 
  private:
-  ApplyResult apply_impl(const std::string& json, ApplySource src,
-                         bool theme_rebuild);
+  void configure_chrome(JsonObjectConst doc, bool theme_rebuild);
   void restyle_overlays();
 
-  // The applied layout's JSON, kept to rebuild it in another theme.
-  std::string active_json_;
-  // Written on the UI task, read by /hello on the HTTP task.
-  std::atomic<theme::Mode> built_mode_{theme::Mode::Day};
-
-  // Page swipes on every multi-screen layout, and the swipe up that
-  // shows an overlay tab strip.
-  void on_press();
-  void track_swipe();
-  void cancel_swipe();
-  void end_press();
-
-  lv_obj_t* parent_ = nullptr;
-  lv_indev_t* indev_ = nullptr;
-  lv_point_t press_{};
-  bool press_at_edge_ = false;
-  bool press_on_layout_ = false;  // the current press began on the layout
-  lv_obj_t* pressed_ = nullptr;   // what LVGL holds as pressed; may be gone
-  uint32_t swipe_timer_ = 0;
-  uint32_t tab_peek_ms_ = 5000;
-  lv_obj_t* current_root_ = nullptr;
+  LayoutPlayer player_;
+  bool initialised_ = false;
   std::string active_name_;
   ApplySource active_source_ = ApplySource::Boot;
   PostSwapHook post_swap_;

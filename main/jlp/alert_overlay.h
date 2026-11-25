@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "lvgl.h"
+#include "alert_policy.h"
 #include "notifications_registry.h"
 
 namespace jlp {
@@ -19,24 +20,6 @@ namespace jlp {
  *
  *  Created once at boot, configured by each LayoutManager::apply()
  *  from the layout's optional top-level `notifications` block. */
-/** When a level sounds: never, when the notification's SK `method` asks
- *  for "sound" (the default), or always. */
-enum class SoundPolicy : uint8_t { Off, Source, Always };
-
-/** What the layout's `notifications.levels.<state>` asks of one state. */
-struct LevelPolicy {
-  bool show = false;                    // the overlay pops for it
-  SoundPolicy sound = SoundPolicy::Off;
-  uint16_t repeat_s = 0;                // chime again until acked; 0 = once
-};
-
-/** Policies for alert, warn, alarm, emergency, in that order. */
-using LevelPolicies = std::array<LevelPolicy, 4>;
-
-/** The policies a layout gets from `min_state` alone: shown and sounding
- *  (as the source asks) from that state up, nothing below, no repeat. */
-LevelPolicies policies_from_min_state(NotState min_state);
-
 class AlertOverlay {
  public:
   void init();
