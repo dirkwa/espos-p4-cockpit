@@ -8,7 +8,6 @@
 
 #include "cockpit_hal/ui.h"
 
-#include "../notifications_registry.h"
 #include "../subject_registry.h"
 #include "../widgets/widget_factory.h"
 
@@ -422,21 +421,35 @@ AlertConfig parse_alert_config(JsonObjectConst doc) {
   return c;
 }
 
+LayoutPlayer::~LayoutPlayer() { detach(); }
+
+void LayoutPlayer::detach() {
+  cancel_swipe();
+  if (peek_timer_ != 0) {
+    cockpit_hal::ui::cancel(peek_timer_);
+    peek_timer_ = 0;
+  }
+  if (indev_ != nullptr) {
+    lv_indev_remove_event_cb_with_user_data(indev_, on_press_event, this);
+    indev_ = nullptr;
+  }
+}
+
+void LayoutPlayer::on_press_event(lv_event_t* e) {
+  static_cast<LayoutPlayer*>(lv_event_get_user_data(e))->on_press();
+}
+
 void LayoutPlayer::init(lv_obj_t* parent, ChromeHook chrome) {
+  detach();
   parent_ = parent;
   chrome_ = std::move(chrome);
   // Presses are watched on the input device, not on an object: a swipe
   // may start on any widget of the page.
   indev_ = lv_indev_get_next(nullptr);
   if (indev_ != nullptr) {
-    lv_indev_add_event_cb(
-        indev_,
-        [](lv_event_t* e) {
-          static_cast<LayoutPlayer*>(lv_event_get_user_data(e))->on_press();
-        },
-        LV_EVENT_PRESSED, this);
+    lv_indev_add_event_cb(indev_, on_press_event, LV_EVENT_PRESSED, this);
   }
-  cockpit_hal::ui::every(250, [this]() {
+  peek_timer_ = cockpit_hal::ui::every(250, [this]() {
     ScreenSwitcherCtx* ctx = switcher_of(current_root_);
     if (ctx != nullptr && ctx->peeking &&
         lv_tick_elaps(ctx->peek_start) >= tab_peek_ms_) {

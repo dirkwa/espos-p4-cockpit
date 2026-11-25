@@ -2,10 +2,12 @@
 //
 // The layout engine without the device around it: parse, validate, build
 // under a hidden staging parent, swap, plus the tab strip and page swipes.
-// It touches LVGL, ArduinoJson, the widget factory and the theme only, so
-// the WASM build runs this same code in the browser. Persistence, the
-// status strip, the alert overlay, the backlight dimmer and value seeding
-// stay with LayoutManager, which drives the player.
+// Besides LVGL and ArduinoJson it uses the widget factory, the subject
+// registry, the theme, the alert level policies and the UI task's timers
+// (cockpit_hal::ui::every/cancel), all of which the WASM build provides,
+// so the browser runs this same code. Persistence, the status strip, the
+// alert overlay, the backlight dimmer and value seeding stay with
+// LayoutManager, which drives the player.
 #pragma once
 
 #include <ArduinoJson.h>
@@ -19,7 +21,7 @@
 
 #include "lvgl.h"
 
-#include "../alert_overlay.h"
+#include "../alert_policy.h"
 #include "../theme.h"
 
 namespace jlp {
@@ -41,6 +43,12 @@ AlertConfig parse_alert_config(JsonObjectConst doc);
 
 class LayoutPlayer {
  public:
+  LayoutPlayer() = default;
+  LayoutPlayer(const LayoutPlayer&) = delete;
+  LayoutPlayer& operator=(const LayoutPlayer&) = delete;
+  // Unhooks the press watcher and the peek timer, which point at this.
+  ~LayoutPlayer();
+
   struct Result {
     bool ok = false;
     std::string err;
@@ -58,8 +66,9 @@ class LayoutPlayer {
   using ChromeHook = std::function<void(JsonObjectConst doc, bool theme_rebuild)>;
 
   // `parent` is where the screens go. Presses are watched on the first
-  // input device, so create it before calling this. UI TASK ONLY, as is
-  // everything below except built_mode().
+  // input device, so create it before calling this. Calling it again
+  // re-hooks instead of hooking twice. UI TASK ONLY, as is everything
+  // below except built_mode().
   void init(lv_obj_t* parent, ChromeHook chrome);
 
   // Builds `json` and swaps it in. On failure the current layout stays up.
@@ -89,6 +98,8 @@ class LayoutPlayer {
  private:
   Result apply_impl(const std::string& json, bool theme_rebuild);
 
+  void detach();
+  static void on_press_event(lv_event_t* e);
   void on_press();
   void track_swipe();
   void cancel_swipe();
@@ -108,6 +119,7 @@ class LayoutPlayer {
   bool press_on_layout_ = false;  // the current press began on the layout
   lv_obj_t* pressed_ = nullptr;   // what LVGL holds as pressed; may be gone
   uint32_t swipe_timer_ = 0;
+  uint32_t peek_timer_ = 0;
   uint32_t tab_peek_ms_ = 5000;
 };
 

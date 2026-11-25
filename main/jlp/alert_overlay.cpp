@@ -165,16 +165,6 @@ void AlertOverlay::init() {
   ESP_LOGI(TAG, "alert overlay initialised");
 }
 
-LevelPolicies policies_from_min_state(NotState min_state) {
-  LevelPolicies p{};
-  for (size_t i = 0; i < p.size(); ++i) {
-    const auto s = static_cast<NotState>(static_cast<int>(NotState::Alert) + static_cast<int>(i));
-    p[i].show = s >= min_state;
-    p[i].sound = s >= min_state ? SoundPolicy::Source : SoundPolicy::Off;
-  }
-  return p;
-}
-
 void AlertOverlay::configure(bool enabled, const LevelPolicies& levels) {
   enabled_ = enabled;
   levels_ = levels;
