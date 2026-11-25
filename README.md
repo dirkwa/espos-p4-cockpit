@@ -246,8 +246,14 @@ The build produces `build/cockpit.bin` (signed) and `build/storage.bin`
 (the espOS web UI); `python scripts/merge_firmware.py --build-dir
 build --chip esp32p4 --out p4_cockpit-merged.bin` makes the single image
 the release workflow attaches (flash at `0x0`). Releases publish it as
-`p4_cockpit-<version>-merged.bin`, alongside
-`p4_cockpit-<version>-ota.bin` — the bare app image for OTA.
+`p4_cockpit-<version>-<board>-merged.bin`, alongside
+`p4_cockpit-<version>-<board>-ota.bin` — the bare app image for OTA — and
+`p4_cockpit-<version>-<board>-<elf-sha>.elf`, the symbols for decoding a core
+dump. `<elf-sha>` is the `app_elf_sha256` that `GET /api/v1/system/coredump`
+reports; fetch the dump from `/api/v1/system/coredump/raw` and run
+`espcoredump.py --chip esp32p4 info_corefile -c coredump.bin -t raw <elf>`.
+Releases up to 1.2.0 name their images without the `-<board>` segment, and
+only releases after this change carry the ELF.
 
 ## Wake word
 
