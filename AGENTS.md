@@ -38,7 +38,8 @@ Companion projects:
 | [main/app_main.cpp](main/app_main.cpp)                | Boot: `espos_start()` with the panel as `before_network`, event handlers, N2K, API |
 | [main/jlp/](main/jlp/)                                | All player code                           |
 | [main/jlp/widgets/widget_factory.cpp](main/jlp/widgets/widget_factory.cpp) | Every widget kind in one file |
-| [main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp)   | Apply pipeline + atomic swap   |
+| [main/jlp/layout/layout_player.cpp](main/jlp/layout/layout_player.cpp)     | Parse, validate, build, atomic swap, tab strip and page swipes; shared with the WASM build |
+| [main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp)   | The device around the player: persistence, chrome, value seeding |
 | [main/jlp/net/http_api.cpp](main/jlp/net/http_api.cpp)                    | `/hello`, `/layout`, `/screenshot`, `/healthz` |
 | [main/jlp/notifications_registry.cpp](main/jlp/notifications_registry.cpp)| Notifications + ack state              |
 | [main/jlp/alert_overlay.cpp](main/jlp/alert_overlay.cpp)                  | Full-screen alarm modal                |
@@ -81,7 +82,13 @@ single feature.
 
 ## Pipeline: parse → validate → stage → swap → persist
 
-`LayoutManager::apply()` ([src/jlp/layout/layout_manager.cpp](src/jlp/layout/layout_manager.cpp)):
+`LayoutManager::apply()` ([main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp))
+drives `LayoutPlayer::apply()` ([main/jlp/layout/layout_player.cpp](main/jlp/layout/layout_player.cpp)),
+which does steps 1 to 5 and calls back for step 4. The player depends on
+LVGL, ArduinoJson, the widget factory, the theme and the alert overlay's
+level policies only, because the WASM build compiles it for the browser:
+anything that needs the device (LittleFS, the backlight, audio, espOS)
+belongs in the manager or in the chrome hook, never in the player.
 
 1. **Parse** the JSON via ArduinoJson, capped at 64 KB POST body.
 2. **Validate** schema version, widget kinds, duplicate ids, kind
