@@ -214,7 +214,8 @@ Mandatory:
    you registered a `notifications().on_change(...)` observer, also
    call `off_change(token)` first.
 5. Add the kind to the `/hello` widgets dictionary in
-   [http_api.cpp](src/jlp/net/http_api.cpp) with its supported fields.
+   [widget_catalog.h](main/jlp/widgets/widget_catalog.h) with its
+   supported fields; the browser display reports the same catalog.
 6. Dispatch in `build_widget()` at the bottom of widget_factory.cpp.
 7. Document the kind in [JLP-PROTOCOL.md](JLP-PROTOCOL.md).
 
