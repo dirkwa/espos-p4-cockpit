@@ -543,9 +543,15 @@ LayoutPlayer::Result LayoutPlayer::rebuild_for_theme() {
     r.ok = true;
     return r;
   }
-  const std::string screen = active_screen();
+  // By index: the same layout has the same screens, and an id may be empty.
+  ScreenSwitcherCtx* before = switcher_of(current_root_);
+  const int active = before != nullptr ? before->active : -1;
   Result r = apply_impl(active_json_, true);
-  if (r.ok && !screen.empty()) select_screen(screen);
+  ScreenSwitcherCtx* after = switcher_of(current_root_);
+  if (r.ok && after != nullptr && active > 0 &&
+      active < (int)after->screens.size()) {
+    switcher_show(after, active);
+  }
   return r;
 }
 
@@ -567,12 +573,14 @@ LayoutPlayer::Result LayoutPlayer::apply_impl(const std::string& json,
 
   // Atomic swap: build the new tree as a child of `parent_` but hidden,
   // then unhide on success and delete the old. If the build fails, the
-  // current layout stays up untouched.
-  //
-  // (Earlier this code used lv_obj_create(NULL) which creates a SCREEN,
-  // not a regular object — re-parenting a screen under another object
-  // is undefined in LVGL 9 and resulted in widgets that never rendered.)
+  // current layout stays up untouched. Staging is a regular child of
+  // `parent_`: lv_obj_create(NULL) would make a screen, and a screen cannot
+  // be moved under another object in LVGL 9 (its widgets never render).
   lv_obj_t* staging = lv_obj_create(parent_);
+  if (staging == nullptr) {
+    r.err = "out of memory";
+    return r;
+  }
   lv_obj_set_size(staging, lv_pct(100), lv_pct(100));
   lv_obj_set_pos(staging, 0, 0);
   lv_obj_set_style_border_width(staging, 0, LV_PART_MAIN);

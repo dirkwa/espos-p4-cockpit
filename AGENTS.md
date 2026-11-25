@@ -84,10 +84,12 @@ single feature.
 
 `LayoutManager::apply()` ([main/jlp/layout/layout_manager.cpp](main/jlp/layout/layout_manager.cpp))
 drives `LayoutPlayer::apply()` ([main/jlp/layout/layout_player.cpp](main/jlp/layout/layout_player.cpp)),
-which does steps 1 to 5 and calls back for step 4. The player depends on
-LVGL, ArduinoJson, the widget factory, the theme and the alert overlay's
-level policies only, because the WASM build compiles it for the browser:
-anything that needs the device (LittleFS, the backlight, audio, espOS)
+which does steps 1 to 5 and calls back for step 4. The WASM build
+compiles the player for the browser, so it may use only LVGL,
+ArduinoJson, the widget factory, the subject registry, the theme, the
+alert overlay's level policies (`alert_policy.h`) and the UI task's timers
+(`cockpit_hal::ui::every`/`cancel`), all of which that build provides.
+Anything that needs the device (LittleFS, the backlight, audio, espOS)
 belongs in the manager or in the chrome hook, never in the player.
 
 1. **Parse** the JSON via ArduinoJson, capped at 64 KB POST body.

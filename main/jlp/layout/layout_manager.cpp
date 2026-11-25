@@ -26,8 +26,8 @@ void LayoutManager::init(lv_obj_t* parent) {
 void LayoutManager::configure_chrome(JsonObjectConst doc, bool theme_rebuild) {
   // Apply status_overlay flag before the swap. Default true (matches
   // the original always-on behavior — existing layouts unchanged).
-  // Toggling resizes content_root, so the staging tree needs to be
-  // re-parented after the resize to inherit the new geometry.
+  // Toggling resizes content_root; the staging tree is sized as a
+  // percentage of it, so it follows without being moved.
   bool overlay_visible = true;
   if (doc["status_overlay"].is<bool>()) {
     overlay_visible = doc["status_overlay"];
