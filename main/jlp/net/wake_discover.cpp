@@ -34,12 +34,19 @@ std::atomic<bool> s_running{false};
 // silently producing JSON that fails to parse.
 constexpr size_t kMaxBody = 8192;
 
-bool fetch_status(std::string* out) {
+// `*status` is the HTTP status, 0 when no reply arrived.
+bool fetch_status(std::string* out, int* status) {
   espos_sk_http_opts_t opts = {};
   opts.timeout_ms = 3000;
   opts.max_body = kMaxBody;
+  // A plugin's own access rule says nothing about whether our device token is
+  // still good. Reported, every refusal here made espOS re-check the token,
+  // and a re-check that could not get a socket took the stream down: the
+  // "Signal K connection lost" banner on a panel that never used the plugin.
+  opts.no_report_unauthorized = true;
   espos_sk_http_resp_t r = {};
   esp_err_t err = espos_sk_http_get(kPath, &opts, &r);
+  *status = err == ESP_OK ? r.status : 0;
   bool ok = false;
   if (err != ESP_OK || r.status != 200) {
     ESP_LOGI(kTag, "status query: err=%s http=%d", esp_err_to_name(err), r.status);
@@ -102,7 +109,21 @@ void discover_task(void*) {
     if (espos_sk_get_server(&srv) != ESP_OK || !s_sat) continue;
 
     std::string body;
-    if (!fetch_status(&body)) continue;
+    int http = 0;
+    if (!fetch_status(&body, &http)) {
+      // The server answered and said no: the plugin is not installed (404)
+      // or will not talk to this device (401/403). Most panels run without
+      // the plugin, and for them the fast rounds are pure load. A server
+      // still loading its plugins also answers 404; the slow poll finds it
+      // within a minute. No reply at all keeps the fast pace.
+      if ((http == 401 || http == 403 || http == 404) && attempt < kFastAttempts) {
+        ESP_LOGI(kTag, "wake service not available to this panel (HTTP %d) — "
+                       "keeping the on-device word, checking again every %d s",
+                 http, kSlowDelayMs / 1000);
+        attempt = kFastAttempts - 1;  // the loop's ++ lands on the slow pace
+      }
+      continue;
+    }
 
     JsonDocument doc;
     if (deserializeJson(doc, body) != DeserializationError::Ok) {
