@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.8.0...v1.8.1) (2026-11-25)
+
+
+### Fixed
+
+* bump espOS to v0.32.0 ([#224](https://github.com/dirkwa/espos-p4-cockpit/issues/224)) ([47db286](https://github.com/dirkwa/espos-p4-cockpit/commit/47db286ae1b0f17855edfa3148757efb6bce1344))
+* size the socket table for the panel ([#228](https://github.com/dirkwa/espos-p4-cockpit/issues/228)) ([9fbfa61](https://github.com/dirkwa/espos-p4-cockpit/commit/9fbfa61720301e1380e13ad4ce9e9521fd312d5a))
+* **wake:** keep wake discovery off the token ([#227](https://github.com/dirkwa/espos-p4-cockpit/issues/227)) ([6c32dea](https://github.com/dirkwa/espos-p4-cockpit/commit/6c32deada14c38c6fea69fc78f1c9f6bed669ce6))
+
+
+### Changed
+
+* **layout:** share the layout player with wasm ([#225](https://github.com/dirkwa/espos-p4-cockpit/issues/225)) ([2db663e](https://github.com/dirkwa/espos-p4-cockpit/commit/2db663e7ba383ca8a4fb17a2279fca214e185a17))
+
 ## [1.8.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.7.0...v1.8.0) (2026-11-19)
 
 
