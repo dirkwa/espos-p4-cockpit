@@ -979,7 +979,7 @@ struct Job {
   esp_err_t (*handler)(httpd_req_t*);
 };
 
-// What a route registers as its user_ctx: the handler the worker runs.
+// What a route registers as its user_ctx: the handler it runs.
 struct Deferred {
   esp_err_t (*handler)(httpd_req_t*);
 };
@@ -1041,6 +1041,20 @@ esp_err_t reject_busy(httpd_req_t* req, const char* json) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_sendstr(req, json);
   return has_body ? ESP_FAIL : ESP_OK;
+}
+
+// The short routes run on the server task. A GET body would be drained
+// there after the return, at the client's pace and with no deadline, so a
+// request that carries one is refused and its connection closed unread.
+esp_err_t run_inline(httpd_req_t* req) {
+  if (req->content_len > 0) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"unexpected body\"}");
+    return ESP_FAIL;
+  }
+  return static_cast<const Deferred*>(req->user_ctx)->handler(req);
 }
 
 esp_err_t defer_to_worker(httpd_req_t* req) {
@@ -1107,9 +1121,9 @@ void http_api_register() {
     httpd_uri_t uri = {};
     uri.uri = r.uri;
     uri.method = r.method;
-    uri.handler = r.deferred ? defer_to_worker : r.handler.handler;
+    uri.handler = r.deferred ? defer_to_worker : run_inline;
     // kRoutes is static, so the entry outlives the server that points at it.
-    uri.user_ctx = r.deferred ? const_cast<Deferred*>(&r.handler) : nullptr;
+    uri.user_ctx = const_cast<Deferred*>(&r.handler);
     const esp_err_t err = espos_httpd_register_ex(&uri, r.flags);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "layout api: %s not registered: %s", r.uri,
