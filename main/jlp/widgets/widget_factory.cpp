@@ -294,11 +294,6 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* lc = static_cast<LabelCtx*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
-        if (!has_reading(raw)) {
-          lv_label_set_text(w, "—");
-          return;
-        }
-        float v = raw * lc->d.scale + lc->d.offset;
         bool wrote_desc = false;
         if (lc->show_description) {
           const std::string& desc = zones().description(lc->d.path);
@@ -307,6 +302,11 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
             wrote_desc = true;
           }
         }
+        if (!has_reading(raw)) {
+          if (!wrote_desc) lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * lc->d.scale + lc->d.offset;
         if (!wrote_desc) {
           lv_label_set_text_fmt(w, "%.*f %s", lc->d.decimals, v, lc->d.unit);
         }
