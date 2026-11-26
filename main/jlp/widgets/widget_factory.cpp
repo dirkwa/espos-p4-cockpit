@@ -1171,10 +1171,14 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // geometry below can stay clear of the ring it paints.
   const int arc_stroke = side / 12;
 
-  // ---- Bands (advisory colored ring painted UNDER the indicator).
-  // Each band is its own lv_arc with no indicator and a thin track
-  // styled in the band's color. Created before the indicator so the
-  // indicator paints on top.
+  // ---- Bands: advisory colored ring just inside the track, under the
+  // tick marks like the scale of a gauge. A band the size of the arc would
+  // sit under the opaque track and never show. Each band is its own lv_arc
+  // with no indicator and a thin track in the band's color.
+  // As deep as the tick marks, so tick labels stay clear of it.
+  const int band_w = 6;
+  const int band_side = side - 2 * (arc_stroke + 2);
+  auto norm_deg = [](int a) { return ((a % 360) + 360) % 360; };
   JsonArrayConst bands = spec["bands"];
   if (!bands.isNull()) {
     for (JsonObjectConst b : bands) {
@@ -1182,29 +1186,33 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       float to = b["to"] | 0.f;
       const char* hex = b["color"] | "#3fb950";
       if (to < from) { float t = to; to = from; from = t; }
-      // Map [from, to] in display-space back to arc angle range.
+      // from/to are display-space, like min/max.
       float span = v_max - v_min;
-      if (span <= 0) continue;
-      float t0 = (from * tmp_disp.scale + tmp_disp.offset - v_min) / span;
-      float t1 = (to   * tmp_disp.scale + tmp_disp.offset - v_min) / span;
+      if (span <= 0 || band_side <= 2 * band_w) continue;
+      float t0 = (from - v_min) / span;
+      float t1 = (to - v_min) / span;
       if (t0 < 0) t0 = 0;
       if (t1 > 1) t1 = 1;
       if (t1 <= t0) continue;
       int ang0 = sa + (int)(total_sweep * t0);
       int ang1 = sa + (int)(total_sweep * t1);
+      // A band over a full circle would otherwise end where it starts.
+      if (ang1 - ang0 >= 360) ang1 = ang0 + 359;
       uint32_t color = theme::state_color(0);
       parse_hex_color(hex, &color);
 
       lv_obj_t* band = lv_arc_create(root);
-      lv_obj_set_size(band, side, side);
+      lv_obj_set_size(band, band_side, band_side);
       lv_obj_align(band, LV_ALIGN_CENTER, 0, 0);
-      lv_arc_set_bg_angles(band, ang0 % 360, ang1 % 360);
+      lv_arc_set_bg_angles(band, norm_deg(ang0), norm_deg(ang1));
       // Zero the indicator — we only want the bg ring visible.
-      lv_arc_set_angles(band, ang0 % 360, ang0 % 360);
+      lv_arc_set_angles(band, norm_deg(ang0), norm_deg(ang0));
       lv_obj_remove_style(band, NULL, LV_PART_KNOB);
       lv_obj_set_clickable(band, false);
       lv_obj_set_style_arc_color(band, lv_color_hex(color), LV_PART_MAIN);
-      lv_obj_set_style_arc_width(band, 4, LV_PART_MAIN);
+      lv_obj_set_style_arc_width(band, band_w, LV_PART_MAIN);
+      lv_obj_set_style_arc_rounded(band, false, LV_PART_MAIN);
+      lv_obj_set_style_arc_width(band, 0, LV_PART_INDICATOR);
     }
   }
 
@@ -1225,9 +1233,6 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // even when the layout coords don't overlap.
   lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_MAIN);
   lv_obj_set_style_arc_width(arc, arc_stroke, LV_PART_INDICATOR);
-  // Also lift the inactive bg arc above the bands so the bands sit
-  // visibly OUTSIDE rather than fighting the track. Re-pin the arc
-  // on top by setting it as the parent's last child via z-order:
   lv_obj_move_foreground(arc);
   (void)v_min; (void)v_max;  // captured by RangeBinding below
 
@@ -1281,9 +1286,8 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       lv_obj_set_style_line_width(tick, 2, LV_PART_MAIN);
 
       if (tick_labels) {
-        // v_min/v_max are already DISPLAY-space bounds -- the band code
-        // above converts raw to display before comparing against them, and
-        // the live arc feeds scale_to_steps(display_value, min, max). So the
+        // v_min/v_max are already DISPLAY-space bounds, like the bands,
+        // and the live arc feeds scale_to_steps(display_value, min, max). So the
         // interpolated value is the label; applying scale/offset again would
         // transform it twice (a 0..100 arc with scale=100 would read 10000).
         float disp_val = v_min + (v_max - v_min) * t;
