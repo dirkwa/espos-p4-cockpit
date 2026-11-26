@@ -602,6 +602,7 @@ jobs:
             rm -rf -- "${TAG:?}"
             mkdir -p "$TAG"
             cp "$staged"/*.bin "$TAG/"
+            cp "$staged"/OFL-Montserrat.txt "$TAG/"
             # Keep the branch bounded: the newest KEEP tags by VERSION order, not
             # by when they were published, or v0.10.0 would prune before v0.6.0.
             # ALWAYS keep the tag this run publishes -- without that exception,
