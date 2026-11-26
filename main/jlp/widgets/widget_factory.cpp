@@ -1713,10 +1713,11 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
       // Pre-init the start to the zero-steps position; the observer
       // sets only the end on each update. RANGE mode draws the fill
       // BETWEEN start and end, so anchoring start at zero produces
-      // the "band from zero" behavior.
+      // the "band from zero" behavior. End first: LVGL clamps the start
+      // to the current end, so the bar stays empty until a reading.
       int32_t zero_steps = scale_to_steps(0.f, v_min, v_max);
-      lv_bar_set_start_value(bar, zero_steps, LV_ANIM_OFF);
       lv_bar_set_value(bar, zero_steps, LV_ANIM_OFF);
+      lv_bar_set_start_value(bar, zero_steps, LV_ANIM_OFF);
     }
     lv_obj_add_event_cb(
         bar,
