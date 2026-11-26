@@ -35,7 +35,8 @@ except `GET /hello` and `GET /healthz` needs `Authorization: Bearer <key>`
 has a key.
 
 A request the device cannot take on because its layout API is busy is
-answered `503` with `Retry-After: 1`.
+answered `503` with `Retry-After: 1`. If that request carried a body, the
+device closes the connection after the answer instead of reading the body.
 
 `POST /layout` and `POST /screen` take `Content-Type: application/json` only
 and answer `415` otherwise, so a web page cannot post to the panel through a

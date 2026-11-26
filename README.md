@@ -282,7 +282,10 @@ download mode.
 
 ## Push your first layout
 
-Once the device log (`http://<device>/` → Logs) shows `advertising _signalk-player._tcp on port 80`:
+Once the device log (`http://<device>/` → Logs) shows `advertising _signalk-player._tcp on port 80`.
+Port 80 is the default; when `httpd.port` is set to another port, the log
+and the mDNS record name that port, and the URLs below need it
+(`http://$IP:<port>/hello`):
 
 ```bash
 IP=<device-ip>

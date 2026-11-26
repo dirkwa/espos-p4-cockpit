@@ -113,13 +113,17 @@ bool recv_body(httpd_req_t* req, std::string* body) {
 // Discards a body the handler will not read, so its error answer reaches the
 // client before the connection closes: closing over unread data sends a RST,
 // and the client loses the answer with it. Bounded like espOS's own
-// espos_httpd_read_body; past that the RST is acceptable. Sets
-// Connection: close, since the handler then returns ESP_FAIL.
+// espos_httpd_read_body, in bytes and in time: every receive may succeed
+// while a client sends a byte a few seconds apart, and this holds the only
+// worker. Past either limit the RST is acceptable. Sets Connection: close,
+// since the handler then returns ESP_FAIL.
 void drain_body(httpd_req_t* req) {
   char sink[256];
   size_t done = 0;
   const size_t total = req->content_len;
-  while (done < total && done < 4 * kMaxBodyBytes) {
+  const int64_t deadline = esp_timer_get_time() + int64_t{kRecvWaitS} * 1000000;
+  while (done < total && done < 4 * kMaxBodyBytes &&
+         esp_timer_get_time() < deadline) {
     const size_t want = std::min(sizeof(sink), total - done);
     const int n = httpd_req_recv(req, sink, want);
     if (n <= 0) break;
@@ -1025,25 +1029,30 @@ void worker_task(void*) {
   }
 }
 
+// Answered on the server task. A body left unread would be drained there
+// after the return, at the client's pace, and stall the web UI, REST and OTA
+// behind a slow sender; such a connection is closed instead. Without a body
+// it stays open for the retry.
+esp_err_t reject_busy(httpd_req_t* req, const char* json) {
+  const bool has_body = req->content_len > 0;
+  httpd_resp_set_status(req, "503 Service Unavailable");
+  httpd_resp_set_hdr(req, "Retry-After", "1");
+  if (has_body) httpd_resp_set_hdr(req, "Connection", "close");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, json);
+  return has_body ? ESP_FAIL : ESP_OK;
+}
+
 esp_err_t defer_to_worker(httpd_req_t* req) {
   const auto* deferred = static_cast<const Deferred*>(req->user_ctx);
-  // Answered here, synchronously, so the server drains any body after the
-  // handler returns. The server task is the only producer, so a free slot
-  // stays free until the send.
+  // The server task is the only producer, so a free slot stays free until
+  // the send.
   if (uxQueueSpacesAvailable(g_jobs) == 0) {
-    httpd_resp_set_status(req, "503 Service Unavailable");
-    httpd_resp_set_hdr(req, "Retry-After", "1");
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"busy\"}");
-    return ESP_OK;
+    return reject_busy(req, "{\"ok\":false,\"err\":\"busy\"}");
   }
   httpd_req_t* copy = nullptr;
   if (httpd_req_async_handler_begin(req, &copy) != ESP_OK) {
-    httpd_resp_set_status(req, "503 Service Unavailable");
-    httpd_resp_set_hdr(req, "Retry-After", "1");
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"out of memory\"}");
-    return ESP_OK;
+    return reject_busy(req, "{\"ok\":false,\"err\":\"out of memory\"}");
   }
   const Job job{copy, deferred->handler};
   xQueueSend(g_jobs, &job, 0);
