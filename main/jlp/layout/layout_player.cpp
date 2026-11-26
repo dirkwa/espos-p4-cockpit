@@ -76,6 +76,44 @@ static void strip_peek(ScreenSwitcherCtx* ctx, bool on) {
   lv_obj_set_hidden(ctx->strip, !on);
 }
 
+// read_only: a transparent cover over each page's widgets takes every press,
+// so no widget acts on it, while the tab strip stays outside the covers and
+// a swipe that starts on one still turns the page. Tagged by user_data so
+// it can be found again; the widgets never set that pointer.
+char cover_tag;
+
+lv_obj_t* cover_of(lv_obj_t* page) {
+  const uint32_t n = lv_obj_get_child_count(page);
+  for (uint32_t i = 0; i < n; ++i) {
+    lv_obj_t* c = lv_obj_get_child(page, (int32_t)i);
+    if (lv_obj_get_user_data(c) == &cover_tag) return c;
+  }
+  return nullptr;
+}
+
+// False only when a cover could not be made.
+bool set_cover(lv_obj_t* page, bool on) {
+  lv_obj_t* cover = cover_of(page);
+  if (!on) {
+    if (cover != nullptr) lv_obj_delete(cover);
+    return true;
+  }
+  if (cover == nullptr) {
+    cover = lv_obj_create(page);
+    if (cover == nullptr) return false;
+    lv_obj_remove_style_all(cover);
+    lv_obj_set_ignore_layout(cover, true);
+    lv_obj_set_floating(cover, true);
+    lv_obj_set_scrollable(cover, false);
+    lv_obj_set_scroll_chain(cover, false);
+    lv_obj_set_pos(cover, 0, 0);
+    lv_obj_set_size(cover, lv_pct(100), lv_pct(100));
+    lv_obj_set_user_data(cover, &cover_tag);
+  }
+  lv_obj_move_to_index(cover, -1);
+  return true;
+}
+
 // Builds the screen(s) under `root`. Single screen: widgets parented
 // directly to root. Multi-screen: each screen gets its own container
 // stacked top-to-top, only the active one is visible, and a bottom
@@ -244,6 +282,17 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
 static ScreenSwitcherCtx* switcher_of(lv_obj_t* root) {
   if (!root) return nullptr;
   return static_cast<ScreenSwitcherCtx*>(lv_obj_get_user_data(root));
+}
+
+// Covers or uncovers every page of a built layout. A single-screen layout
+// has its widgets on the root itself. False when a page is left uncovered.
+static bool cover_layout(lv_obj_t* root, bool on) {
+  if (root == nullptr) return true;
+  ScreenSwitcherCtx* ctx = switcher_of(root);
+  if (ctx == nullptr) return set_cover(root, on);
+  bool all = true;
+  for (lv_obj_t* page : ctx->screens) all = set_cover(page, on) && all;
+  return all;
 }
 
 // Subject kind a given widget type expects on its `bind` path. Must
@@ -646,6 +695,15 @@ LayoutPlayer::Result LayoutPlayer::apply_impl(const std::string& json,
     return r;
   }
 
+  // Like any part of the tree, a cover that cannot be made fails the build:
+  // an uncovered page of a read-only display would take writes.
+  if (read_only_ && !cover_layout(staging, true)) {
+    r.err = "out of memory";
+    restore_theme(prev_theme);
+    lv_obj_delete(staging);
+    return r;
+  }
+
   if (chrome_) chrome_(doc.as<JsonObjectConst>(), theme_rebuild);
 
   // A swipe in progress belongs to the old layout: further movement must
@@ -679,6 +737,31 @@ LayoutPlayer::Result LayoutPlayer::apply_impl(const std::string& json,
   r.name = doc["name"] | "(unnamed)";
   r.screens = screens.size();
   return r;
+}
+
+bool LayoutPlayer::set_read_only(bool on) {
+  if (on == read_only_) return true;
+  // Uncovering cannot fail; a half-covered layout goes back to none.
+  if (!cover_layout(current_root_, on)) {
+    cover_layout(current_root_, false);
+    return false;
+  }
+  read_only_ = on;
+  if (!on || current_root_ == nullptr) return true;
+  // The covers are hit-tested by their coordinates: a press before the next
+  // refresh must already land on them.
+  lv_obj_update_layout(current_root_);
+  // A widget held now keeps its press under the new cover, and a button
+  // that sent its press value must get its release. A press on the tab
+  // strip, or a swipe begun there, goes on.
+  ScreenSwitcherCtx* ctx = switcher_of(current_root_);
+  if (pressed_ != nullptr && indev_ != nullptr && press_on_layout_ &&
+      lv_indev_get_state(indev_) == LV_INDEV_STATE_PRESSED &&
+      lv_obj_is_valid(pressed_) && inside(pressed_, current_root_) &&
+      !(ctx != nullptr && inside(pressed_, ctx->strip))) {
+    end_press();
+  }
+  return true;
 }
 
 bool LayoutPlayer::select_screen(const std::string& id) {
