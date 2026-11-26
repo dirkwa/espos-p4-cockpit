@@ -1,4 +1,5 @@
 #include "status_overlay.h"
+#include "fonts/jlp_fonts.h"
 
 #include <cstdio>
 #include <initializer_list>
@@ -13,7 +14,7 @@ constexpr int kStripHeight = 28;
 
 lv_obj_t* make_label(lv_obj_t* parent, const char* init) {
   lv_obj_t* l = lv_label_create(parent);
-  lv_obj_set_style_text_font(l, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_font(l, &jlp_font_14, LV_PART_MAIN);
   lv_label_set_text(l, init);
   return l;
 }
@@ -50,7 +51,7 @@ void StatusOverlay::init() {
   lv_obj_set_style_border_width(gear_, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(gear_, 0, LV_PART_MAIN);
   gear_lbl_ = lv_label_create(gear_);
-  lv_obj_set_style_text_font(gear_lbl_, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(gear_lbl_, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(gear_lbl_, LV_SYMBOL_SETTINGS);
   lv_obj_center(gear_lbl_);
   lv_obj_add_event_cb(
@@ -82,7 +83,7 @@ void StatusOverlay::init() {
   lv_obj_set_scrollable(sk_lost_, false);
   lv_obj_set_hidden(sk_lost_, true);
   sk_lost_lbl_ = lv_label_create(sk_lost_);
-  lv_obj_set_style_text_font(sk_lost_lbl_, &lv_font_montserrat_14,
+  lv_obj_set_style_text_font(sk_lost_lbl_, &jlp_font_14,
                              LV_PART_MAIN);
   lv_label_set_text(sk_lost_lbl_, "Signal K connection lost");
   lv_obj_center(sk_lost_lbl_);

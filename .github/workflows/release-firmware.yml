@@ -301,6 +301,9 @@ jobs:
           # Apache-2.0 4(a): whoever downloads only a binary still gets the
           # licence, and the notices name the model licence esp-sr ships under.
           cp LICENSE THIRD-PARTY-NOTICES.md dist/
+          # OFL 1.1 condition 2: the font data in the image travels with its
+          # licence text.
+          cp main/jlp/fonts/OFL.txt dist/OFL-Montserrat.txt
           ls -l dist/
 
       - name: Upload build artifact
@@ -599,6 +602,7 @@ jobs:
             rm -rf -- "${TAG:?}"
             mkdir -p "$TAG"
             cp "$staged"/*.bin "$TAG/"
+            cp "$staged"/OFL-Montserrat.txt "$TAG/"
             # Keep the branch bounded: the newest KEEP tags by VERSION order, not
             # by when they were published, or v0.10.0 would prune before v0.6.0.
             # ALWAYS keep the tag this run publishes -- without that exception,
@@ -746,6 +750,7 @@ jobs:
             dist/*.elf
             dist/LICENSE
             dist/THIRD-PARTY-NOTICES.md
+            dist/OFL-Montserrat.txt
           body: ${{ steps.notes.outputs.body }}
 
       # Any failure after the mirror pushed, not only a failed attach. The
