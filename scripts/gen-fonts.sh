@@ -25,6 +25,6 @@ for px in 14 16 20 28 36; do
     --lv-fallback "lv_font_montserrat_$px" --force-fast-kern-format \
     -o "main/jlp/fonts/jlp_font_$px.c"
   sed -i -e '1i /* SPDX-License-Identifier: OFL-1.1 */' \
-    -e '1a /* Montserrat, Copyright 2011 The Montserrat Project Authors; see OFL.txt. */' \
+    -e '1i /* Montserrat, Copyright 2011 The Montserrat Project Authors; see OFL.txt. */' \
     "main/jlp/fonts/jlp_font_$px.c"
 done
