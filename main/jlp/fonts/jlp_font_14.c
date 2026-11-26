@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: OFL-1.1 (Montserrat, see OFL.txt) */
+/* SPDX-License-Identifier: OFL-1.1 */
+/* Montserrat, Copyright 2011 The Montserrat Project Authors; see OFL.txt. */
 /*******************************************************************************
  * Size: 14 px
  * Bpp: 4

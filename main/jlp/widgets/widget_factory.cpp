@@ -1678,7 +1678,8 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
                                  LV_PART_MAIN);
       lv_label_set_text(unit_lbl, d.unit);
       lv_obj_set_pos(unit_lbl, tick_x, cell_y + 14);
-      lv_obj_set_height(unit_lbl, 16);
+      // A full line, so descenders in units such as "kg" are not cut.
+      lv_obj_set_height(unit_lbl, lv_font_get_line_height(&jlp_font_14));
     }
     (void)tick_w;
 
