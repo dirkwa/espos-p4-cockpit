@@ -9,6 +9,7 @@ repository under its own licence, which continues to apply to it unchanged:
 | `components/esp_lcd_st7703` | 2024 Espressif Systems (Shanghai) CO LTD | Apache-2.0 |
 | `components/esp_lcd_ek79007` | 2023-2024 Espressif Systems (Shanghai) CO LTD | Apache-2.0 |
 | `components/cockpit_hal/src/ili9881c_init_cmds.inc` | Waveshare, from the `esp32_p4_wifi6_touch_lcd_x` BSP 2.0.3 | Apache-2.0 |
+| `main/jlp/fonts/jlp_font_*.c` | 2011 The Montserrat Project Authors; bitmaps generated from LVGL's copy of Montserrat Medium | SIL OFL 1.1, text in [`main/jlp/fonts/OFL.txt`](main/jlp/fonts/OFL.txt), attached to every release as `OFL-Montserrat.txt` |
 
 Their SPDX headers are retained in the source files.
 

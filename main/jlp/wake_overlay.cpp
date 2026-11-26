@@ -1,4 +1,5 @@
 #include "wake_overlay.h"
+#include "fonts/jlp_fonts.h"
 
 #include "esp_log.h"
 #include "theme.h"
@@ -25,7 +26,7 @@ void WakeOverlay::init() {
 
   lbl_ = lv_label_create(root_);
   lv_label_set_text(lbl_, "TAP TO WAKE");
-  lv_obj_set_style_text_font(lbl_, &lv_font_montserrat_36, LV_PART_MAIN);
+  lv_obj_set_style_text_font(lbl_, &jlp_font_36, LV_PART_MAIN);
   lv_obj_center(lbl_);
   restyle();
 }

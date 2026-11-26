@@ -1,4 +1,5 @@
 #include "alert_overlay.h"
+#include "fonts/jlp_fonts.h"
 
 #include <iterator>
 
@@ -64,19 +65,19 @@ void AlertOverlay::init() {
   lv_obj_move_foreground(root_);
 
   state_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_font(state_label_, &lv_font_montserrat_28,
+  lv_obj_set_style_text_font(state_label_, &jlp_font_28,
                              LV_PART_MAIN);
   lv_label_set_text(state_label_, "ALARM");
   lv_obj_align(state_label_, LV_ALIGN_TOP_MID, 0, 0);
 
   path_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_font(path_label_, &lv_font_montserrat_14,
+  lv_obj_set_style_text_font(path_label_, &jlp_font_14,
                              LV_PART_MAIN);
   lv_label_set_text(path_label_, "");
   lv_obj_align_to(path_label_, state_label_, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
 
   msg_label_ = lv_label_create(root_);
-  lv_obj_set_style_text_font(msg_label_, &lv_font_montserrat_20,
+  lv_obj_set_style_text_font(msg_label_, &jlp_font_20,
                              LV_PART_MAIN);
   lv_label_set_text(msg_label_, "");
   lv_label_set_long_mode(msg_label_, LV_LABEL_LONG_WRAP);
@@ -96,7 +97,7 @@ void AlertOverlay::init() {
   lv_obj_set_style_radius(ack_button_, 8, LV_PART_MAIN);
   ack_lbl_ = lv_label_create(ack_button_);
   lv_obj_t* ack_lbl = ack_lbl_;
-  lv_obj_set_style_text_font(ack_lbl, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_font(ack_lbl, &jlp_font_28, LV_PART_MAIN);
   lv_label_set_text(ack_lbl, "ACK");
   lv_obj_center(ack_lbl);
 

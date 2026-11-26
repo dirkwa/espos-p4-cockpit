@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "layout_player.h"
+#include "../fonts/jlp_fonts.h"
 
 #include <cstring>
 #include <optional>
@@ -247,7 +248,7 @@ bool build_screens(lv_obj_t* root, JsonObjectConst doc, JsonArrayConst screens,
     lv_label_set_text(lbl, title);
     lv_obj_set_style_text_color(lbl, lv_color_hex(theme::palette().tab_fg),
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl, &jlp_font_20, LV_PART_MAIN);
     lv_obj_center(lbl);
 
     // Stash the screen index as a small int in user_data.
