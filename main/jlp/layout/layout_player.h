@@ -84,6 +84,15 @@ class LayoutPlayer {
   // Theme the active layout was built in. Safe from any task.
   theme::Mode built_mode() const { return built_mode_.load(); }
 
+  // A display that only shows values: widgets take no input, while the tab
+  // strip and page swipes still change the screen. Lists do not scroll
+  // either: the cover takes the drag. Applies to the layout
+  // shown and to every later build. Overlays the host draws above the
+  // layout (alert, status strip) are the host's to guard. False, with the
+  // mode unchanged, when the layout shown could not be covered.
+  bool set_read_only(bool on);
+  bool read_only() const { return read_only_; }
+
   // Remote equivalent of tapping a tab, by the layout's `screens[].id`
   // because the index is not stable across layout edits. False if the id
   // is unknown or the layout is single-screen (it has no tab strip).
@@ -121,6 +130,7 @@ class LayoutPlayer {
   uint32_t swipe_timer_ = 0;
   uint32_t peek_timer_ = 0;
   uint32_t tab_peek_ms_ = 5000;
+  bool read_only_ = false;
 };
 
 }  // namespace jlp
