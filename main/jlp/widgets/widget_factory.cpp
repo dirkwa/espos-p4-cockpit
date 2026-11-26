@@ -294,7 +294,6 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* lc = static_cast<LabelCtx*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
-        float v = raw * lc->d.scale + lc->d.offset;
         bool wrote_desc = false;
         if (lc->show_description) {
           const std::string& desc = zones().description(lc->d.path);
@@ -303,6 +302,11 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
             wrote_desc = true;
           }
         }
+        if (!has_reading(raw)) {
+          if (!wrote_desc) lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * lc->d.scale + lc->d.offset;
         if (!wrote_desc) {
           lv_label_set_text_fmt(w, "%.*f %s", lc->d.decimals, v, lc->d.unit);
         }
@@ -416,6 +420,10 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* vc = static_cast<ValueCtx*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
         float v = raw * vc->d.scale + vc->d.offset;
         // Big number: just the formatted value, no unit (unit sits
         // in its own bottom-right label so it doesn't grow / shrink
@@ -860,7 +868,9 @@ lv_obj_t* build_brightness_slider(BuildCtx& ctx, JsonObjectConst spec,
         auto* w = lv_observer_get_target_obj(obs);
         auto* bc = static_cast<BrightnessCtx*>(lv_obj_get_user_data(w));
         if (bc->dragging) return;
-        const int32_t pct = (int32_t)lroundf(lv_subject_get_float(s));
+        const float level = lv_subject_get_float(s);
+        if (!has_reading(level)) return;
+        const int32_t pct = (int32_t)lroundf(level);
         lv_slider_set_value(w, std::max(kBrightnessMin, std::min(kBrightnessMax, pct)),
                             LV_ANIM_OFF);
       },
@@ -941,6 +951,7 @@ lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* sc = static_cast<SliderCtx*>(lv_obj_get_user_data(w));
         if (sc->dragging) return;
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * sc->display.scale + sc->display.offset;
         lv_slider_set_value(w, scale_to_steps(v, sc->min, sc->max),
                             LV_ANIM_OFF);
@@ -1328,6 +1339,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * rb->display.scale + rb->display.offset;
         lv_arc_set_value(w, scale_to_steps(v, rb->min, rb->max));
         // Zones live in raw SK units; match against raw, not display.
@@ -1364,7 +1376,12 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
-        float v = lv_subject_get_float(s) * rb->display.scale + rb->display.offset;
+        float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * rb->display.scale + rb->display.offset;
         lv_label_set_text_fmt(w, "%.*f %s", rb->display.decimals, v,
                               rb->display.unit);
       },
@@ -1452,6 +1469,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * rb->display.scale + rb->display.offset;
         lv_bar_set_value(w, scale_to_steps(v, rb->min, rb->max), LV_ANIM_OFF);
         // Zones live in raw SK units; match against raw, not display.
@@ -1468,7 +1486,12 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
-        float v = lv_subject_get_float(s) * rb->display.scale + rb->display.offset;
+        float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * rb->display.scale + rb->display.offset;
         lv_label_set_text_fmt(w, "%.*f %s", rb->display.decimals, v,
                               rb->display.unit);
       },
@@ -1694,10 +1717,11 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
       // Pre-init the start to the zero-steps position; the observer
       // sets only the end on each update. RANGE mode draws the fill
       // BETWEEN start and end, so anchoring start at zero produces
-      // the "band from zero" behavior.
+      // the "band from zero" behavior. End first: LVGL clamps the start
+      // to the current end, so the bar stays empty until a reading.
       int32_t zero_steps = scale_to_steps(0.f, v_min, v_max);
-      lv_bar_set_start_value(bar, zero_steps, LV_ANIM_OFF);
       lv_bar_set_value(bar, zero_steps, LV_ANIM_OFF);
+      lv_bar_set_start_value(bar, zero_steps, LV_ANIM_OFF);
     }
     lv_obj_add_event_cb(
         bar,
@@ -1713,6 +1737,12 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
           auto* bcb = static_cast<BarCellBinding*>(lv_obj_get_user_data(w));
           auto& rb = bcb->range;
           float raw = lv_subject_get_float(s);
+          if (!has_reading(raw)) {
+            if (lv_obj_is_valid(bcb->value_label)) {
+              lv_label_set_text(bcb->value_label, "—");
+            }
+            return;
+          }
           float v = raw * rb.display.scale + rb.display.offset;
           int32_t v_steps = scale_to_steps(v, rb.min, rb.max);
           if (rb.min < 0.f && rb.max > 0.f) {
@@ -2217,6 +2247,7 @@ struct AnchorCtx {
   bool state_on = false;    // navigation.anchor.state == "on"
   bool have_bearing = false;
   float bearing_rad = 0.f;  // apparentBearing (0 = ahead), radians
+  bool have_cur = false;    // a currentRadius reading arrived, 0 included
   float cur_m = 0.f;
   float max_m = 0.f;
 };
@@ -2254,9 +2285,7 @@ static void anchor_render(AnchorCtx* a) {
     lv_arc_set_value(a->ring, 0);
     lv_obj_set_style_arc_color(a->ring, lv_color_hex(muted_hex()),
                                LV_PART_INDICATOR);
-    // ASCII dash, not an em-dash: the compiled Montserrat glyph set
-    // doesn't carry U+2014, so "—" renders as a tofu box on-device.
-    lv_label_set_text(a->dist, "--");
+    lv_label_set_text(a->dist, "—");
     lv_label_set_text(a->caption, "ANCHOR UP");
     return;
   }
@@ -2264,22 +2293,26 @@ static void anchor_render(AnchorCtx* a) {
   // Ring FILL is still the fraction of the limit (0..1, clamped) — a
   // visual "how far out of my scope am I". COLOUR is by absolute margin
   // (see anchor_ring_color). max=0 guards a divide-by-zero.
-  float frac = (a->max_m > 0.f) ? (a->cur_m / a->max_m) : 0.f;
+  float frac = (a->have_cur && a->max_m > 0.f) ? (a->cur_m / a->max_m) : 0.f;
   if (frac < 0.f) frac = 0.f;
   if (frac > 1.f) frac = 1.f;
   lv_arc_set_value(a->ring, (int32_t)(frac * kBarSteps));
   // Until a positive maxRadius arrives the margin is undefined — keep the
   // ring muted rather than flashing red/yellow off a 0 limit. This can
   // happen when state="on" lands before the maxRadius delta.
-  uint32_t ring_color = a->max_m > 0.f
+  uint32_t ring_color = a->have_cur && a->max_m > 0.f
                             ? anchor_ring_color(a->cur_m, a->max_m)
                             : muted_hex();
   lv_obj_set_style_arc_color(a->ring, lv_color_hex(ring_color),
                              LV_PART_INDICATOR);
 
   // Centre distance (currentRadius) in display units.
-  float dv = a->cur_m * a->dist_disp.scale + a->dist_disp.offset;
-  lv_label_set_text_fmt(a->dist, "%.*f", a->dist_disp.decimals, dv);
+  if (a->have_cur) {
+    float dv = a->cur_m * a->dist_disp.scale + a->dist_disp.offset;
+    lv_label_set_text_fmt(a->dist, "%.*f", a->dist_disp.decimals, dv);
+  } else {
+    lv_label_set_text(a->dist, "—");
+  }
   if (a->max_m > 0.f) {
     float mv = a->max_m * a->dist_disp.scale + a->dist_disp.offset;
     lv_label_set_text_fmt(a->caption, "of %.*f %s", a->dist_disp.decimals, mv,
@@ -2381,7 +2414,7 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_t* dist = lv_label_create(root);
   lv_obj_set_style_text_color(dist, lv_color_hex(colors.fg), LV_PART_MAIN);
   lv_obj_set_style_text_font(dist, &jlp_font_28, LV_PART_MAIN);
-  lv_label_set_text(dist, "--");  // ASCII: U+2014 em-dash tofus on-device
+  lv_label_set_text(dist, "—");
   lv_obj_align(dist, LV_ALIGN_CENTER, 0, -4);
 
   lv_obj_t* caption = lv_label_create(root);
@@ -2442,7 +2475,9 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->bearing_rad = lv_subject_get_float(s);
+        const float brg = lv_subject_get_float(s);
+        if (!has_reading(brg)) return;
+        a->bearing_rad = brg;
         a->have_bearing = true;
         anchor_render(a);
       },
@@ -2453,7 +2488,10 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->cur_m = lv_subject_get_float(s);
+        const float cur = lv_subject_get_float(s);
+        if (!has_reading(cur)) return;
+        a->have_cur = true;
+        a->cur_m = cur;
         anchor_render(a);
       },
       root, nullptr);
@@ -2463,7 +2501,9 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->max_m = lv_subject_get_float(s);
+        const float max = lv_subject_get_float(s);
+        if (!has_reading(max)) return;
+        a->max_m = max;
         anchor_render(a);
       },
       root, nullptr);
@@ -2515,6 +2555,7 @@ struct AnchorTrackCtx {
   bool state_on = false;
   bool have_bearing = false;
   float bearing_rad = 0.f;
+  bool have_cur = false;
   float cur_m = 0.f;
   float max_m = 0.f;
   std::string id;                        // widget id, keys the kept tail
@@ -2589,7 +2630,7 @@ static void anchor_track_render(AnchorTrackCtx* a) {
   // Boundary ring colour = drag margin (same palette as the boat dot and
   // the anchor dial's ring): green comfortably inside, yellow within the
   // warn margin, red once currentRadius exceeds maxRadius.
-  uint32_t margin_color = a->max_m > 0.f
+  uint32_t margin_color = a->have_cur && a->max_m > 0.f
                               ? anchor_ring_color(a->cur_m, a->max_m)
                               : track_hex();
   lv_obj_set_style_border_color(a->zone, lv_color_hex(margin_color),
@@ -2605,7 +2646,7 @@ static void anchor_track_render(AnchorTrackCtx* a) {
   }
 
   // Small readout at the bottom edge: current distance.
-  if (a->max_m > 0.f) {
+  if (a->have_cur && a->max_m > 0.f) {
     float dv = a->cur_m * a->dist_disp.scale + a->dist_disp.offset;
     lv_label_set_text_fmt(a->caption, "%.*f %s", a->dist_disp.decimals, dv,
                           a->dist_disp.unit);
@@ -2615,7 +2656,7 @@ static void anchor_track_render(AnchorTrackCtx* a) {
 
   // Current-position dot: placed at the boat's polar position, coloured
   // by drag margin (same palette as the boundary ring).
-  if (a->have_bearing && a->max_m > 0.f) {
+  if (a->have_bearing && a->have_cur && a->max_m > 0.f) {
     lv_point_precise_t p = anchor_track_xy(a, a->cur_m / a->max_m);
     lv_obj_set_pos(a->boat, (int)(p.x - a->boat_r), (int)(p.y - a->boat_r));
     lv_obj_set_style_bg_color(a->boat,
@@ -2632,7 +2673,9 @@ static void anchor_track_render(AnchorTrackCtx* a) {
 // bearingTrue or currentRadius). Skips near-duplicate points so a boat
 // sitting still doesn't fill the buffer with one spot.
 static void anchor_track_push(AnchorTrackCtx* a) {
-  if (!anchor_track_watching(a) || !a->have_bearing || a->max_m <= 0.f) return;
+  if (!anchor_track_watching(a) || !a->have_bearing || !a->have_cur ||
+      a->max_m <= 0.f)
+    return;
   lv_point_precise_t p = anchor_track_xy(a, a->cur_m / a->max_m);
   if (a->count > 0) {
     int last = (a->head - 1 + kTrackMax) % kTrackMax;
@@ -2823,7 +2866,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->bearing_rad = lv_subject_get_float(s);
+        const float brg = lv_subject_get_float(s);
+        if (!has_reading(brg)) return;
+        a->bearing_rad = brg;
         a->have_bearing = true;
         anchor_track_push(a);
         anchor_track_render(a);
@@ -2835,7 +2880,10 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->cur_m = lv_subject_get_float(s);
+        const float cur = lv_subject_get_float(s);
+        if (!has_reading(cur)) return;
+        a->have_cur = true;
+        a->cur_m = cur;
         anchor_track_push(a);
         anchor_track_render(a);
       },
@@ -2846,7 +2894,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->max_m = lv_subject_get_float(s);
+        const float max = lv_subject_get_float(s);
+        if (!has_reading(max)) return;
+        a->max_m = max;
         anchor_track_render(a);
       },
       root, nullptr);

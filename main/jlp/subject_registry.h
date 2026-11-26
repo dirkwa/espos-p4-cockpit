@@ -2,6 +2,8 @@
 
 #include "lvgl.h"
 #include <atomic>
+#include <cfloat>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -13,6 +15,13 @@
 namespace jlp {
 
 enum class SubjectKind { Float, Int, Bool, String };
+
+// A float subject's value until its first reading, so a widget can show a
+// dash instead of a made-up 0 (or -273 °C under a Kelvin offset). LVGL
+// clamps a float subject to its range, which would turn NaN into the
+// maximum, so the maximum itself is the mark.
+inline constexpr float kNoReading = FLT_MAX;
+inline bool has_reading(float v) { return v < kNoReading && !std::isnan(v); }
 
 struct SubjectEntry {
   std::string path;
