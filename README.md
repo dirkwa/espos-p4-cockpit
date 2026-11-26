@@ -57,7 +57,7 @@ C6 is blocked upstream — it stays a separate concern.
 config store, runs the panel bring-up as the `before_network` hook (display,
 touch, LVGL and the stored layout are on screen within a second, then audio
 and the voice satellite), and only then starts the HTTP server, WiFi, SignalK
-and OTA. The N2K gateway, the layout API on :8081 and its
+and OTA. The N2K gateway, the layout API on the espOS web server and its
 `_signalk-player._tcp` record follow. From there the panel reacts to espOS
 events — network up/down, token approved, stream connected/disconnected —
 rather than polling: the first stream connect seeds quiet paths and fetches
@@ -83,11 +83,11 @@ If a pushed or fetched layout fails parse/validate/build, the previous layout st
 
 | Port | Method | Endpoint        | Purpose                                       |
 |------|--------|-----------------|-----------------------------------------------|
-| 8081 | GET    | `/hello`        | Capability descriptor (schema, widgets, display, active layout, screenshot formats) |
-| 8081 | POST   | `/layout`       | Apply a layout JSON (≤64 KB), atomic swap + NVS persist |
-| 8081 | GET    | `/screenshot`   | Framebuffer dump. Default: software-encoded JPEG. `?fmt=bmp` for the legacy RGB565 BMP. |
-| 8081 | POST   | `/screen`       | Select the active screen by `screens[].id` (remote tab tap) |
-| 8081 | GET    | `/healthz`      | Liveness probe                                |
+| 80   | GET    | `/hello`        | Capability descriptor (schema, widgets, display, active layout, screenshot formats) |
+| 80   | POST   | `/layout`       | Apply a layout JSON (≤64 KB), atomic swap + NVS persist |
+| 80   | GET    | `/screenshot`   | Framebuffer dump. Default: software-encoded JPEG. `?fmt=bmp` for the legacy RGB565 BMP. |
+| 80   | POST   | `/screen`       | Select the active screen by `screens[].id` (remote tab tap) |
+| 80   | GET    | `/healthz`      | Liveness probe                                |
 | 80   | *      | `/`, `/api/v1/…` | espOS web UI + REST API (config, WiFi, SignalK, OTA, logs, core dump) |
 | 80   | GET    | `/api/v1/n2k`   | CAN bus diagnostics: `running`, `ever_received`, `idle_s`, frames, dropped, errors, bus_off, decoded last-error flags |
 | 2599 | TCP    | (candump)       | Stream raw N2K frames in candump format       |
@@ -288,17 +288,23 @@ download mode.
 
 ## Push your first layout
 
-Once the device log (`http://<device>/` → Logs) shows `advertising _signalk-player._tcp on port 8081`:
+Once the device log (`http://<device>/` → Logs) shows `advertising _signalk-player._tcp on port 80`.
+Port 80 is the default; when `httpd.port` is set to another port, the log
+and the mDNS record name that port, and the URLs below need it
+(`http://$IP:<port>/hello`):
 
 ```bash
 IP=<device-ip>
-curl -sf http://$IP:8081/hello | jq .              # see what the device supports
+curl -sf http://$IP/hello | jq .                   # see what the device supports
 curl -sf -X POST -H "Content-Type: application/json" \
   --data-binary @my-layout.json \
-  http://$IP:8081/layout                            # swap atomically
+  http://$IP/layout                                 # swap atomically
 ```
 
-Or open the SK admin UI, launch **HMI Designer**, point it at `http://<device-ip>:8081`, and drag.
+With an API key set on the device (`httpd.api_key`), add
+`-H "Authorization: Bearer <key>"` to the POST; `/hello` stays open.
+
+Or open the SK admin UI, launch **HMI Designer**, point it at `http://<device-ip>`, and drag.
 
 ## Related projects
 

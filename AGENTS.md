@@ -159,7 +159,7 @@ wins at runtime.
 . ~/esp-idf-v6.0.3/export.sh           # the version in .idf-version
 scripts/build.sh -DIDF_TARGET=esp32p4  # → espos/scripts/build.sh: locked, nice'd, capped ninja
 scripts/build.sh -p /dev/ttyACM0 flash monitor
-curl -sf http://<device-ip>:8081/hello | jq .
+curl -sf http://<device-ip>/hello | jq .
 curl -sf "http://<device-ip>/api/v1/logs?limit=200" | jq -r '.lines[]'   # espOS log ring
 curl -sf http://<device-ip>/api/v1/system/info | jq .last_reset          # why the watchdog rebooted, if it did
 ```
@@ -229,8 +229,8 @@ designer refuses to push widget kinds the device doesn't advertise.
 | Task              | Touches LVGL? | Notes |
 |-------------------|---------------|-------|
 | `ui` task         | yes           | `lv_timer_handler`, `ui::post` queue, `ui::after/every` timers, layout build/swap, alert overlay; watched by espOS (`taskStalled` after 15 s, task-watchdog panic at 30 s) |
-| `httpd_api` (8081)| no directly   | Parses + validates POSTs, marshals to the UI task, waits on completion semaphore |
-| espOS httpd (80)  | no            | web UI + REST (config, OTA, logs, core dump) |
+| espOS httpd (80)  | no            | web UI + REST (config, OTA, logs, core dump) and the layout API's routes; detaches the long ones to `jlp_http` |
+| `jlp_http`        | no directly   | Layout API worker: parses + validates POSTs, marshals to the UI task, waits on completion semaphore, sends screenshots |
 | `esp_timer` 1 ms  | no            | `lv_tick_inc(1)` only — lock-free |
 | `espos_skws` task | no            | espOS SignalK stream; subscription callbacks run here and `ui::post` their work |
 | esp_event loop    | no            | `ESPOS_EVENT` handlers (network up/down, token approved, stream connected/disconnected) `ui::post` their work |

@@ -33,9 +33,11 @@ CONFIG_SPIRAM_MODE_HEX=y
 CONFIG_SPIRAM_SPEED_200M=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
-# ---- espOS: URI handler table; inbound stream frames — a subscription burst
-# after a reconnect carries values + meta for every bound path at once
-CONFIG_ESPOS_HTTPD_MAX_URI_HANDLERS=64
+# ---- espOS: URI handler table, which also carries the layout API's 10
+# routes and /api/v1/n2k next to espOS's own (about 55 on this panel); inbound
+# stream frames — a subscription burst after a reconnect carries values +
+# meta for every bound path at once
+CONFIG_ESPOS_HTTPD_MAX_URI_HANDLERS=80
 CONFIG_ESPOS_SK_RX_FRAME_MAX=65536
 
 # ---- lwIP: the panel streams and serves layouts/screenshots
