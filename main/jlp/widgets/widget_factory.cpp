@@ -294,6 +294,10 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* lc = static_cast<LabelCtx*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
         float v = raw * lc->d.scale + lc->d.offset;
         bool wrote_desc = false;
         if (lc->show_description) {
@@ -416,6 +420,10 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* vc = static_cast<ValueCtx*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
         float v = raw * vc->d.scale + vc->d.offset;
         // Big number: just the formatted value, no unit (unit sits
         // in its own bottom-right label so it doesn't grow / shrink
@@ -860,7 +868,9 @@ lv_obj_t* build_brightness_slider(BuildCtx& ctx, JsonObjectConst spec,
         auto* w = lv_observer_get_target_obj(obs);
         auto* bc = static_cast<BrightnessCtx*>(lv_obj_get_user_data(w));
         if (bc->dragging) return;
-        const int32_t pct = (int32_t)lroundf(lv_subject_get_float(s));
+        const float level = lv_subject_get_float(s);
+        if (!has_reading(level)) return;
+        const int32_t pct = (int32_t)lroundf(level);
         lv_slider_set_value(w, std::max(kBrightnessMin, std::min(kBrightnessMax, pct)),
                             LV_ANIM_OFF);
       },
@@ -941,6 +951,7 @@ lv_obj_t* build_slider(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* sc = static_cast<SliderCtx*>(lv_obj_get_user_data(w));
         if (sc->dragging) return;
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * sc->display.scale + sc->display.offset;
         lv_slider_set_value(w, scale_to_steps(v, sc->min, sc->max),
                             LV_ANIM_OFF);
@@ -1324,6 +1335,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * rb->display.scale + rb->display.offset;
         lv_arc_set_value(w, scale_to_steps(v, rb->min, rb->max));
         // Zones live in raw SK units; match against raw, not display.
@@ -1360,7 +1372,12 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
-        float v = lv_subject_get_float(s) * rb->display.scale + rb->display.offset;
+        float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * rb->display.scale + rb->display.offset;
         lv_label_set_text_fmt(w, "%.*f %s", rb->display.decimals, v,
                               rb->display.unit);
       },
@@ -1448,6 +1465,7 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
         float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) return;
         float v = raw * rb->display.scale + rb->display.offset;
         lv_bar_set_value(w, scale_to_steps(v, rb->min, rb->max), LV_ANIM_OFF);
         // Zones live in raw SK units; match against raw, not display.
@@ -1464,7 +1482,12 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* rb = static_cast<RangeBinding*>(lv_obj_get_user_data(w));
-        float v = lv_subject_get_float(s) * rb->display.scale + rb->display.offset;
+        float raw = lv_subject_get_float(s);
+        if (!has_reading(raw)) {
+          lv_label_set_text(w, "—");
+          return;
+        }
+        float v = raw * rb->display.scale + rb->display.offset;
         lv_label_set_text_fmt(w, "%.*f %s", rb->display.decimals, v,
                               rb->display.unit);
       },
@@ -1708,6 +1731,12 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
           auto* bcb = static_cast<BarCellBinding*>(lv_obj_get_user_data(w));
           auto& rb = bcb->range;
           float raw = lv_subject_get_float(s);
+          if (!has_reading(raw)) {
+            if (lv_obj_is_valid(bcb->value_label)) {
+              lv_label_set_text(bcb->value_label, "—");
+            }
+            return;
+          }
           float v = raw * rb.display.scale + rb.display.offset;
           int32_t v_steps = scale_to_steps(v, rb.min, rb.max);
           if (rb.min < 0.f && rb.max > 0.f) {
@@ -2437,7 +2466,9 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->bearing_rad = lv_subject_get_float(s);
+        const float brg = lv_subject_get_float(s);
+        if (!has_reading(brg)) return;
+        a->bearing_rad = brg;
         a->have_bearing = true;
         anchor_render(a);
       },
@@ -2448,7 +2479,9 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->cur_m = lv_subject_get_float(s);
+        const float cur = lv_subject_get_float(s);
+        if (!has_reading(cur)) return;
+        a->cur_m = cur;
         anchor_render(a);
       },
       root, nullptr);
@@ -2458,7 +2491,9 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorCtx*>(lv_obj_get_user_data(w));
-        a->max_m = lv_subject_get_float(s);
+        const float max = lv_subject_get_float(s);
+        if (!has_reading(max)) return;
+        a->max_m = max;
         anchor_render(a);
       },
       root, nullptr);
@@ -2818,7 +2853,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->bearing_rad = lv_subject_get_float(s);
+        const float brg = lv_subject_get_float(s);
+        if (!has_reading(brg)) return;
+        a->bearing_rad = brg;
         a->have_bearing = true;
         anchor_track_push(a);
         anchor_track_render(a);
@@ -2830,7 +2867,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->cur_m = lv_subject_get_float(s);
+        const float cur = lv_subject_get_float(s);
+        if (!has_reading(cur)) return;
+        a->cur_m = cur;
         anchor_track_push(a);
         anchor_track_render(a);
       },
@@ -2841,7 +2880,9 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
       [](lv_observer_t* obs, lv_subject_t* s) {
         auto* w = lv_observer_get_target_obj(obs);
         auto* a = static_cast<AnchorTrackCtx*>(lv_obj_get_user_data(w));
-        a->max_m = lv_subject_get_float(s);
+        const float max = lv_subject_get_float(s);
+        if (!has_reading(max)) return;
+        a->max_m = max;
         anchor_track_render(a);
       },
       root, nullptr);

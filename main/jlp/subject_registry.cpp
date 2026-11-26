@@ -53,7 +53,7 @@ Reading read_delta(SubjectKind kind, const std::string& v) {
       // other text converts to 0 with no characters consumed; that is no
       // reading either.
       r.f = strtof(v.c_str(), &end);
-      r.ok = end != v.c_str() && std::isfinite(r.f);
+      r.ok = end != v.c_str() && std::isfinite(r.f) && has_reading(r.f);
       break;
     case SubjectKind::Int:
       // A toggle is Int-backed and Signal K sends a switch state as true or
@@ -223,6 +223,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
              (int)kind);
     return nullptr;
   }
+  if (kind == SubjectKind::Float) lv_subject_set_float(entry->subject, kNoReading);
 
   Slot slot;
   slot.entry = std::move(entry);
