@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "settings_overlay.h"
+#include "fonts/jlp_fonts.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -59,7 +60,7 @@ lv_obj_t* big_button(lv_obj_t* parent, lv_obj_t** label, const char* text) {
   lv_obj_set_style_outline_width(b, 0, LV_PART_MAIN);
   lv_obj_set_style_border_width(b, 0, LV_PART_MAIN);
   *label = lv_label_create(b);
-  lv_obj_set_style_text_font(*label, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(*label, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(*label, text);
   lv_obj_center(*label);
   return b;
@@ -67,7 +68,7 @@ lv_obj_t* big_button(lv_obj_t* parent, lv_obj_t** label, const char* text) {
 
 lv_obj_t* caption(lv_obj_t* parent, const char* text) {
   lv_obj_t* l = lv_label_create(parent);
-  lv_obj_set_style_text_font(l, &lv_font_montserrat_16, LV_PART_MAIN);
+  lv_obj_set_style_text_font(l, &jlp_font_16, LV_PART_MAIN);
   lv_label_set_text(l, text);
   return l;
 }
@@ -157,7 +158,7 @@ void SettingsOverlay::init() {
   lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   title_ = lv_label_create(head);
-  lv_obj_set_style_text_font(title_, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_font(title_, &jlp_font_28, LV_PART_MAIN);
   lv_label_set_text(title_, "Settings");
   close_ = big_button(head, &close_lbl_, LV_SYMBOL_CLOSE);
   lv_obj_set_width(close_, 64);
@@ -184,7 +185,7 @@ void SettingsOverlay::init() {
   // Bigger than the visible knob, for a wet thumb.
   lv_obj_set_ext_click_area(slider_, 20);
   bright_val_ = lv_label_create(row);
-  lv_obj_set_style_text_font(bright_val_, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(bright_val_, &jlp_font_20, LV_PART_MAIN);
   lv_obj_set_width(bright_val_, 70);
   lv_obj_set_style_text_align(bright_val_, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
   // Preview on the backlight while dragging, persist on release: the
@@ -248,7 +249,7 @@ void SettingsOverlay::init() {
                          "for 3 s on a free spot to open this menu.");
   lv_obj_set_width(hint_, LV_PCT(100));
   lv_label_set_long_mode(hint_, LV_LABEL_LONG_WRAP);
-  lv_obj_set_style_text_font(hint_, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_font(hint_, &jlp_font_14, LV_PART_MAIN);
 
   lv_obj_set_hidden(root_, true);
 

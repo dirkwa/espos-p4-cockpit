@@ -13,6 +13,8 @@
 
 #include "lvgl.h"
 
+#include "fonts/jlp_fonts.h"
+
 namespace jlp::theme {
 
 enum class Mode : uint8_t { Auto, Day, Dark, Night };
@@ -141,7 +143,7 @@ inline void sync_lvgl_theme() {
   if (!d) return;
   lv_theme_t* t = lv_theme_default_init(d, lv_color_hex(p.accent),
                                         lv_color_hex(p.muted), p.dark_base,
-                                        LV_FONT_DEFAULT);
+                                        &jlp_font_20);
   if (t) lv_display_set_theme(d, t);
   applied = p.mode;
 }

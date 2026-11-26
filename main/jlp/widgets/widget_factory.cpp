@@ -1,4 +1,5 @@
 #include "widget_factory.h"
+#include "../fonts/jlp_fonts.h"
 
 #include <math.h>
 
@@ -107,18 +108,17 @@ void apply_geometry(lv_obj_t* obj, JsonObjectConst spec) {
 
 // Resolve a desired pixel font size to a compiled Montserrat font.
 // LVGL can't synthesize fonts at runtime — we have to pick from
-// what's compiled in (lv_conf.h: LV_FONT_MONTSERRAT_{14,16,20,28,36}
-// on the cockpit build). Snap to the closest compiled size below
+// what's compiled in (fonts/jlp_fonts.h: 14, 16, 20, 28 and 36 px). Snap to the closest compiled size below
 // `desired` so tiles don't overflow when the operator picks a
 // larger-than-fits value; `fallback` is the size used when the
 // spec doesn't specify (preserves existing per-widget defaults).
 const lv_font_t* resolve_font(int desired_px, const lv_font_t* fallback) {
   if (desired_px <= 0) return fallback;
-  if (desired_px >= 36) return &lv_font_montserrat_36;
-  if (desired_px >= 28) return &lv_font_montserrat_28;
-  if (desired_px >= 20) return &lv_font_montserrat_20;
-  if (desired_px >= 16) return &lv_font_montserrat_16;
-  return &lv_font_montserrat_14;
+  if (desired_px >= 36) return &jlp_font_36;
+  if (desired_px >= 28) return &jlp_font_28;
+  if (desired_px >= 20) return &jlp_font_20;
+  if (desired_px >= 16) return &jlp_font_16;
+  return &jlp_font_14;
 }
 
 // Read `display.font_size` if present; otherwise return fallback.
@@ -219,7 +219,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
     apply_geometry(lbl, spec);
     lv_obj_set_style_text_color(lbl, lv_color_hex(colors.fg), LV_PART_MAIN);
     lv_obj_set_style_text_font(
-        lbl, font_from_spec(spec, &lv_font_montserrat_28), LV_PART_MAIN);
+        lbl, font_from_spec(spec, &jlp_font_28), LV_PART_MAIN);
     lv_label_set_text(lbl, caption ? caption : "");
     return lbl;
   }
@@ -242,7 +242,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
   }
@@ -250,7 +250,7 @@ lv_obj_t* build_label(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_t* val = lv_label_create(root);
   lv_obj_set_style_text_color(val, lv_color_hex(colors.fg), LV_PART_MAIN);
   lv_obj_set_style_text_font(
-      val, font_from_spec(spec, &lv_font_montserrat_28), LV_PART_MAIN);
+      val, font_from_spec(spec, &jlp_font_28), LV_PART_MAIN);
   // If a description is already in the registry (loaded via REST
   // fetch on layout apply), show it immediately so the widget is
   // legible before — or even without — the first value delta. Slow-
@@ -366,7 +366,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   if (caption && *caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
   }
@@ -375,9 +375,9 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // wins; otherwise auto-scale with tile height so a tall tile
   // reads from across the cockpit.
   int box_h = spec["h"] | 60;
-  const lv_font_t* default_big = &lv_font_montserrat_28;
-  if (box_h < 60) default_big = &lv_font_montserrat_20;
-  if (box_h < 40) default_big = &lv_font_montserrat_16;
+  const lv_font_t* default_big = &jlp_font_28;
+  if (box_h < 60) default_big = &jlp_font_20;
+  if (box_h < 40) default_big = &jlp_font_16;
   const lv_font_t* big_font = font_from_spec(spec, default_big);
   lv_obj_t* val = lv_label_create(root);
   lv_obj_set_style_text_color(val, lv_color_hex(colors.fg), LV_PART_MAIN);
@@ -390,7 +390,7 @@ lv_obj_t* build_value(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   lv_obj_t* unit_lbl = lv_label_create(root);
   lv_obj_set_style_text_color(unit_lbl, lv_color_hex(muted_hex()),
                               LV_PART_MAIN);
-  lv_obj_set_style_text_font(unit_lbl, &lv_font_montserrat_14,
+  lv_obj_set_style_text_font(unit_lbl, &jlp_font_14,
                              LV_PART_MAIN);
   lv_label_set_text(unit_lbl, "");
   lv_obj_align(unit_lbl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -559,7 +559,7 @@ lv_obj_t* build_audio_mute_toggle(BuildCtx& ctx, JsonObjectConst spec,
   const char* caption = spec["label"] | "MUTE CHIME";
   lv_obj_t* l = lv_label_create(root);
   lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+  lv_obj_set_style_text_font(l, font_from_spec(spec, &jlp_font_20),
                              LV_PART_MAIN);
   lv_label_set_text(l, caption);
   // "MUTE CHIME" is wider than the default tile leaves room for; clip rather
@@ -604,7 +604,7 @@ lv_obj_t* make_local_toggle(BuildCtx& ctx, JsonObjectConst spec,
   const char* caption = spec["label"] | default_caption;
   lv_obj_t* l = lv_label_create(root);
   lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+  lv_obj_set_style_text_font(l, font_from_spec(spec, &jlp_font_20),
                              LV_PART_MAIN);
   lv_label_set_text(l, caption);
   // Bound the caption to what is left after the switch and padding, and dot
@@ -691,7 +691,7 @@ lv_obj_t* build_volume(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   const char* caption = spec["label"] | "VOLUME";
   lv_obj_t* l = lv_label_create(root);
   lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+  lv_obj_set_style_text_font(l, font_from_spec(spec, &jlp_font_20),
                              LV_PART_MAIN);
   lv_label_set_text(l, caption);
   lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -770,7 +770,7 @@ lv_obj_t* build_slider_shell(BuildCtx& ctx, JsonObjectConst spec,
   if (caption) {
     lv_obj_t* l = lv_label_create(root);
     lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, font_from_spec(spec, &lv_font_montserrat_20),
+    lv_obj_set_style_text_font(l, font_from_spec(spec, &jlp_font_20),
                                LV_PART_MAIN);
     lv_label_set_text(l, caption);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1017,7 +1017,7 @@ lv_obj_t* build_toggle(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
     lv_obj_t* l = lv_label_create(root);
     lv_obj_set_style_text_color(l, lv_color_hex(colors.fg), LV_PART_MAIN);
     lv_obj_set_style_text_font(
-        l, font_from_spec(spec, &lv_font_montserrat_20), LV_PART_MAIN);
+        l, font_from_spec(spec, &jlp_font_20), LV_PART_MAIN);
     lv_label_set_text(l, caption);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
   }
@@ -1290,7 +1290,7 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
         lv_obj_t* lbl = lv_label_create(root);
         lv_obj_set_style_text_color(lbl, lv_color_hex(muted_hex()),
                                      LV_PART_MAIN);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, &jlp_font_14, LV_PART_MAIN);
         lv_label_set_text_fmt(lbl, "%.*f", tmp_disp.decimals, disp_val);
         // Centered on a point a bit further inward of the tick's own
         // inner endpoint, so the numeral clears the tick mark. Size
@@ -1341,13 +1341,13 @@ lv_obj_t* build_arc(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   const char* caption = spec["label"] | (const char*)nullptr;
   lv_obj_t* val = lv_label_create(root);
   lv_obj_set_style_text_color(val, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(val, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_font(val, &jlp_font_28, LV_PART_MAIN);
   lv_label_set_text(val, "—");
   lv_obj_center(val);
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align_to(cap, val, LV_ALIGN_OUT_TOP_MID, 0, -2);
   }
@@ -1400,14 +1400,14 @@ lv_obj_t* build_bar(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
   }
 
   lv_obj_t* val = lv_label_create(root);
   lv_obj_set_style_text_color(val, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(val, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(val, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(val, "—");
   lv_obj_align(val, LV_ALIGN_TOP_RIGHT, 0, 0);
 
@@ -1520,7 +1520,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
     caption_h = 20;
@@ -1627,7 +1627,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
       lv_obj_t* zero_lbl = lv_label_create(root);
       lv_obj_set_style_text_color(zero_lbl, lv_color_hex(muted_hex()),
                                   LV_PART_MAIN);
-      lv_obj_set_style_text_font(zero_lbl, &lv_font_montserrat_14,
+      lv_obj_set_style_text_font(zero_lbl, &jlp_font_14,
                                  LV_PART_MAIN);
       lv_label_set_text(zero_lbl, "0");
       lv_obj_set_pos(zero_lbl, cell_x + bar_w + 4, baseline_y - 8);
@@ -1636,7 +1636,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     // Live value text drawn ON the bar (centered).
     lv_obj_t* val_label = lv_label_create(root);
     lv_obj_set_style_text_color(val_label, lv_color_hex(fg_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(val_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(val_label, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(val_label, "—");
     lv_obj_set_width(val_label, bar_w);
     lv_obj_set_style_text_align(val_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -1651,7 +1651,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     lv_obj_t* max_tick = lv_label_create(root);
     lv_obj_set_style_text_color(max_tick, lv_color_hex(muted_hex()),
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_font(max_tick, &lv_font_montserrat_14,
+    lv_obj_set_style_text_font(max_tick, &jlp_font_14,
                                LV_PART_MAIN);
     lv_label_set_text(max_tick, max_text.c_str());
     lv_obj_set_pos(max_tick, tick_x, cell_y - 2);
@@ -1661,7 +1661,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     lv_obj_t* min_tick = lv_label_create(root);
     lv_obj_set_style_text_color(min_tick, lv_color_hex(muted_hex()),
                                 LV_PART_MAIN);
-    lv_obj_set_style_text_font(min_tick, &lv_font_montserrat_14,
+    lv_obj_set_style_text_font(min_tick, &jlp_font_14,
                                LV_PART_MAIN);
     lv_label_set_text(min_tick, min_text.c_str());
     lv_obj_set_pos(min_tick, tick_x, cell_y + bar_h - 16);
@@ -1674,7 +1674,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
       lv_obj_t* unit_lbl = lv_label_create(root);
       lv_obj_set_style_text_color(unit_lbl, lv_color_hex(muted_hex()),
                                   LV_PART_MAIN);
-      lv_obj_set_style_text_font(unit_lbl, &lv_font_montserrat_14,
+      lv_obj_set_style_text_font(unit_lbl, &jlp_font_14,
                                  LV_PART_MAIN);
       lv_label_set_text(unit_lbl, d.unit);
       lv_obj_set_pos(unit_lbl, tick_x, cell_y + 14);
@@ -1754,7 +1754,7 @@ lv_obj_t* build_bargroup(BuildCtx& ctx, JsonObjectConst spec,
     if (*b_label) {
       lv_obj_t* lbl = lv_label_create(root);
       lv_obj_set_style_text_color(lbl, lv_color_hex(muted_hex()), LV_PART_MAIN);
-      lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+      lv_obj_set_style_text_font(lbl, &jlp_font_14, LV_PART_MAIN);
       lv_label_set_text(lbl, b_label);
       lv_obj_set_pos(lbl, cell_x, cell_y + bar_h + 4);
       lv_obj_set_width(lbl, bar_w);
@@ -1885,7 +1885,7 @@ lv_obj_t* build_button(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
 
   lv_obj_t* lbl = lv_label_create(root);
   lv_obj_set_style_text_color(lbl, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(lbl, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(lbl, caption);
   lv_obj_center(lbl);
 
@@ -2053,7 +2053,7 @@ void list_rebuild_rows(ListCtx* lc) {
     for (const ListColumn& col : lc->columns) {
       lv_obj_t* cell = lv_label_create(row);
       lv_obj_set_style_text_color(cell, lv_color_hex(fg), LV_PART_MAIN);
-      lv_obj_set_style_text_font(cell, &lv_font_montserrat_14, LV_PART_MAIN);
+      lv_obj_set_style_text_font(cell, &jlp_font_14, LV_PART_MAIN);
       lv_obj_set_pos(cell, x, 4);
       lv_obj_set_width(cell, col.width);
       lv_label_set_long_mode(cell, LV_LABEL_LONG_DOT);
@@ -2066,7 +2066,7 @@ void list_rebuild_rows(ListCtx* lc) {
   if (count == 0) {
     lv_obj_t* empty = lv_label_create(lc->rows_box);
     lv_obj_set_style_text_color(empty, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(empty, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(empty, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(empty, "(no pending notifications)");
     lv_obj_center(empty);
   }
@@ -2100,7 +2100,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
   if (caption) {
     lv_obj_t* cap = lv_label_create(root);
     lv_obj_set_style_text_color(cap, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(cap, &jlp_font_14, LV_PART_MAIN);
     lv_label_set_text(cap, caption);
     lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, 0);
     header_h = 20;
@@ -2140,7 +2140,7 @@ lv_obj_t* build_notifications(BuildCtx& ctx, JsonObjectConst spec,
 
     lv_obj_t* h = lv_label_create(hdr);
     lv_obj_set_style_text_color(h, lv_color_hex(muted_hex()), LV_PART_MAIN);
-    lv_obj_set_style_text_font(h, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(h, &jlp_font_14, LV_PART_MAIN);
     lv_obj_set_pos(h, x, 0);
     lv_obj_set_width(h, col.width);
     lv_label_set_text(h, col.label.c_str());
@@ -2375,13 +2375,13 @@ lv_obj_t* build_anchor(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
   // Centre distance + caption.
   lv_obj_t* dist = lv_label_create(root);
   lv_obj_set_style_text_color(dist, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(dist, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_font(dist, &jlp_font_28, LV_PART_MAIN);
   lv_label_set_text(dist, "--");  // ASCII: U+2014 em-dash tofus on-device
   lv_obj_align(dist, LV_ALIGN_CENTER, 0, -4);
 
   lv_obj_t* caption = lv_label_create(root);
   lv_obj_set_style_text_color(caption, lv_color_hex(muted_hex()), LV_PART_MAIN);
-  lv_obj_set_style_text_font(caption, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_font(caption, &jlp_font_14, LV_PART_MAIN);
   lv_label_set_text(caption, "ANCHOR UP");
   lv_obj_align_to(caption, dist, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 
@@ -2767,7 +2767,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   // Chain-out (maxRadius) label sitting on the top of the boundary ring.
   lv_obj_t* chain = lv_label_create(root);
   lv_obj_set_style_text_color(chain, lv_color_hex(muted_hex()), LV_PART_MAIN);
-  lv_obj_set_style_text_font(chain, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_font(chain, &jlp_font_14, LV_PART_MAIN);
   lv_obj_set_style_bg_color(chain, lv_color_hex(tile_hex()), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(chain, LV_OPA_COVER, LV_PART_MAIN);  // punch through the ring
   lv_obj_set_style_pad_hor(chain, 3, LV_PART_MAIN);
@@ -2779,7 +2779,7 @@ lv_obj_t* build_anchor_track(BuildCtx& ctx, JsonObjectConst spec,
   // Small current-radius readout at the bottom edge.
   lv_obj_t* caption = lv_label_create(root);
   lv_obj_set_style_text_color(caption, lv_color_hex(muted_hex()), LV_PART_MAIN);
-  lv_obj_set_style_text_font(caption, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_set_style_text_font(caption, &jlp_font_14, LV_PART_MAIN);
   lv_label_set_text(caption, "ANCHOR UP");
   lv_obj_align(caption, LV_ALIGN_BOTTOM_MID, 0, 0);
   a->caption = caption;
@@ -2893,7 +2893,7 @@ lv_obj_t* build_voice(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
 
   lv_obj_t* lbl = lv_label_create(root);
   lv_obj_set_style_text_color(lbl, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(lbl, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(lbl, caption);
   lv_obj_center(lbl);
 
@@ -3240,7 +3240,7 @@ lv_obj_t* build_stream(BuildCtx& ctx, JsonObjectConst spec, std::string* err) {
 
   lv_obj_t* ph = lv_label_create(root);
   lv_obj_set_style_text_color(ph, lv_color_hex(colors.fg), LV_PART_MAIN);
-  lv_obj_set_style_text_font(ph, &lv_font_montserrat_20, LV_PART_MAIN);
+  lv_obj_set_style_text_font(ph, &jlp_font_20, LV_PART_MAIN);
   lv_label_set_text(ph, "connecting…");
   lv_obj_center(ph);
   c->sh->placeholder = ph;
