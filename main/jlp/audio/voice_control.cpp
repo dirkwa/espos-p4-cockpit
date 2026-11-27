@@ -72,8 +72,31 @@ void VoiceControl::kick() {
 
 void VoiceControl::worker(void* arg) {
   auto* self = static_cast<VoiceControl*>(arg);
+  // A wake word that did not come up, or a switch the satellite could not
+  // finish in time, is retried by espOS on the next call. A few calls,
+  // further apart: a word that never loads is not worth retrying for ever,
+  // and push-to-talk works meanwhile.
+  constexpr int kRetries = 3;
+  int failures = 0;
   for (;;) {
-    while (self->dirty_.exchange(false)) self->reconcile();
+    while (self->dirty_.exchange(false)) {
+      if (self->reconcile()) {
+        failures = 0;
+        continue;
+      }
+      if (++failures > kRetries) {
+        ESP_LOGW(kTag, "voice switch still incomplete; giving up until the next layout");
+        failures = 0;
+        continue;
+      }
+      const int wait_ms = 15000 << (failures - 1);
+      ESP_LOGW(kTag, "voice switch incomplete; trying again in %d s", wait_ms / 1000);
+      // A layout pushed meanwhile ends the wait: it is applied at once.
+      for (int t = 0; t < wait_ms && !self->dirty_.load(); t += 500) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+      }
+      self->dirty_.store(true);
+    }
     self->worker_running_.store(false);
     // A kick between the last exchange and the store above saw a running
     // worker and left the change to it.
@@ -86,23 +109,26 @@ void VoiceControl::worker(void* arg) {
   vTaskDelete(nullptr);
 }
 
-void VoiceControl::reconcile() {
-  if (!sat_) return;
+bool VoiceControl::reconcile() {
+  if (!sat_) return true;
   if (!want_enabled_.load()) {
     if (sat_->running()) {
       ESP_LOGI(kTag, "voice off");
       sat_->stop();
     }
-    return;
+    return true;
   }
   // Before start() this is only recorded, so a panel that should not listen
   // never loads WakeNet.
   const bool wake = want_wake_.load();
-  sat_->set_wake_enabled(wake);
+  bool done = sat_->set_wake_enabled(wake);
   if (net_ready_.load() && !sat_->running()) {
     ESP_LOGI(kTag, "voice on, wake word %s", wake ? "on" : "off");
     sat_->start();
   }
+  // start() does not say whether the wake word came up.
+  if (sat_->running() && wake && !sat_->wake_enabled()) done = false;
+  return done;
 }
 
 bool VoiceControl::available() const {

@@ -421,8 +421,10 @@ extern "C" void app_main(void) {
                                           sizeof(kPlayerTxt) / sizeof(kPlayerTxt[0]));
   if (merr != ESP_OK) ESP_LOGW(TAG, "_signalk-player._tcp not advertised: %s", esp_err_to_name(merr));
   // Network is up (lwIP initialised by espOS): safe to open the satellite's
-  // TCP listener and the wake pipeline, if the layout wants them.
-  jlp::voice().set_network_ready();
+  // TCP listener and the wake pipeline, if the layout wants them. Through
+  // the UI queue, so it lands after panel_up()'s callback has wired the
+  // satellite into voice() and applied the boot layout.
+  cockpit_hal::ui::post([] { jlp::voice().set_network_ready(); });
 
   ESP_LOGI(TAG, "boot: iram=%u iram_big=%u psram=%lu", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),

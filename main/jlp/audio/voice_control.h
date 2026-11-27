@@ -102,7 +102,7 @@ class VoiceControl {
 
   void kick();
   static void worker(void* arg);
-  void reconcile();
+  bool reconcile();  // false: not in the state asked for; worth a retry
   // Written on the UI task (set_mode) and the main task (set_network_ready),
   // read by the worker and by /hello.
   std::atomic<bool> want_enabled_{false};
