@@ -48,8 +48,9 @@ void VoiceControl::set_mode(bool enabled, bool wake) {
   const bool wake_was_wanted = wake_wanted();
   const bool enabled_changed = want_enabled_.exchange(enabled) != enabled;
   const bool wake_changed = want_wake_.exchange(wake) != wake;
-  // dirty_ still set: a worker could not be created last time.
-  if (enabled_changed || wake_changed || dirty_.load()) kick();
+  // dirty_ still set: a worker could not be created last time. gave_up_: the
+  // retries ran out, and a layout applied again is the next chance.
+  if (enabled_changed || wake_changed || dirty_.load() || gave_up_.load()) kick();
   if (!wake_was_wanted && wake_wanted() && on_wake_wanted_) on_wake_wanted_();
 }
 
@@ -82,11 +83,13 @@ void VoiceControl::worker(void* arg) {
     while (self->dirty_.exchange(false)) {
       if (self->reconcile()) {
         failures = 0;
+        self->gave_up_.store(false);
         continue;
       }
       if (++failures > kRetries) {
         ESP_LOGW(kTag, "voice switch still incomplete; giving up until the next layout");
         failures = 0;
+        self->gave_up_.store(true);
         continue;
       }
       const int wait_ms = 15000 << (failures - 1);
@@ -122,11 +125,15 @@ bool VoiceControl::reconcile() {
   // never loads WakeNet.
   const bool wake = want_wake_.load();
   bool done = sat_->set_wake_enabled(wake);
+  // Not recorded: starting now would bring up the satellite's previous
+  // choice, WakeNet included.
+  if (!done && !sat_->running()) return false;
   if (net_ready_.load() && !sat_->running()) {
     ESP_LOGI(kTag, "voice on, wake word %s", wake ? "on" : "off");
     sat_->start();
   }
-  // start() does not say whether the wake word came up.
+  // start() does not say whether the wake word came up; wake_enabled() does,
+  // for a network wake task as well as for the on-device engine.
   if (sat_->running() && wake && !sat_->wake_enabled()) done = false;
   return done;
 }

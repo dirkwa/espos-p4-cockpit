@@ -111,6 +111,7 @@ class VoiceControl {
   // A change the worker has not applied yet, and whether a worker runs.
   std::atomic<bool> dirty_{false};
   std::atomic<bool> worker_running_{false};
+  std::atomic<bool> gave_up_{false};  // the worker's retries ran out
   void (*on_wake_wanted_)() = nullptr;  // UI task only
 };
 
