@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.9.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.8.1...v1.9.0) (2026-11-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **net:** the layout API moves from port 8081 to the espOS web server's port (80 by default) and cockpit.api_port is gone. Point the designer at http://<panel> without a port. With httpd.api_key set, everything except /hello and /healthz needs the key.
+
+### Added
+
+* **fonts:** draw umlauts and typographic marks ([#237](https://github.com/dirkwa/espos-p4-cockpit/issues/237)) ([03378b6](https://github.com/dirkwa/espos-p4-cockpit/commit/03378b6b210706660b77a89c154fc2ea27d45def))
+* **layout:** add a read-only mode to the player ([#235](https://github.com/dirkwa/espos-p4-cockpit/issues/235)) ([ce259cd](https://github.com/dirkwa/espos-p4-cockpit/commit/ce259cd55fbd41c8678bd6c5d6c1f4f662f2dc79))
+* **widgets:** show a dash until a value arrives ([#238](https://github.com/dirkwa/espos-p4-cockpit/issues/238)) ([522abb4](https://github.com/dirkwa/espos-p4-cockpit/commit/522abb4954852295fe0c469603d0819b9cca64a7))
+
+
+### Fixed
+
+* bump espOS to v0.32.1 ([#234](https://github.com/dirkwa/espos-p4-cockpit/issues/234)) ([4201767](https://github.com/dirkwa/espos-p4-cockpit/commit/420176744fbad61c9e2b2eeee10c8d3fae035a22))
+* bump espOS to v0.32.2 ([#240](https://github.com/dirkwa/espos-p4-cockpit/issues/240)) ([7ad2548](https://github.com/dirkwa/espos-p4-cockpit/commit/7ad254822efcdf669841af93386bfd605368450d))
+* **widgets:** show arc bands inside the track ([#239](https://github.com/dirkwa/espos-p4-cockpit/issues/239)) ([7a9e391](https://github.com/dirkwa/espos-p4-cockpit/commit/7a9e39188b357ac2d263181641f4bcf2978d9944))
+
+
+### Changed
+
+* **net:** serve the layout API from the espOS httpd ([#232](https://github.com/dirkwa/espos-p4-cockpit/issues/232)) ([af93bb3](https://github.com/dirkwa/espos-p4-cockpit/commit/af93bb345a84ccbb33271a828dc0178df7637594))
+
+
+### Internal
+
+* release the port move as 1.9.0 ([#236](https://github.com/dirkwa/espos-p4-cockpit/issues/236)) ([8aeed1a](https://github.com/dirkwa/espos-p4-cockpit/commit/8aeed1ac8efa2b56a2ffcb7ef21ad24f5638971f))
+
 ## [1.8.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.8.0...v1.8.1) (2026-11-25)
 
 
