@@ -26,6 +26,21 @@ class VoiceControl {
 
   // --- Voice (Wyoming satellite) ---
 
+  // Whether the satellite runs, and whether it listens for the wake word: the
+  // layout's `voice` object, set on the UI task by the layout manager. The
+  // satellite follows on a short-lived worker, because stopping it blocks
+  // for seconds while its tasks exit. Nothing runs until a layout asks.
+  void set_mode(bool enabled, bool wake);
+  // The satellite's listener needs lwIP, so it starts no earlier than this.
+  void set_network_ready();
+  bool enabled() const { return want_enabled_.load(); }
+  // The layout's wake setting, also while voice is off.
+  bool wake() const { return want_wake_.load(); }
+  bool wake_wanted() const { return enabled() && wake(); }
+  // Called on the UI task when a layout turns the wake word on, so wake
+  // discovery can start then instead of at the next SignalK connect.
+  void set_on_wake_wanted(void (*fn)()) { on_wake_wanted_ = fn; }
+
   // True if a satellite is wired and an orchestrator is connected.
   bool available() const;
 
@@ -84,6 +99,19 @@ class VoiceControl {
   std::atomic<uint32_t> speaker_mutes_{0};
   std::atomic<bool> mic_muted_{false};
   std::atomic<uint8_t> volume_{50};  // matches WaveshareAudio's default
+
+  void kick();
+  static void worker(void* arg);
+  void reconcile();
+  // Written on the UI task (set_mode) and the main task (set_network_ready),
+  // read by the worker and by /hello.
+  std::atomic<bool> want_enabled_{false};
+  std::atomic<bool> want_wake_{true};
+  std::atomic<bool> net_ready_{false};
+  // A change the worker has not applied yet, and whether a worker runs.
+  std::atomic<bool> dirty_{false};
+  std::atomic<bool> worker_running_{false};
+  void (*on_wake_wanted_)() = nullptr;  // UI task only
 };
 
 VoiceControl& voice();

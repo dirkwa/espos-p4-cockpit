@@ -81,6 +81,15 @@ espos_voice::WyomingSatellite* s_wyoming_sat = nullptr;
 // stays out of the way.
 bool s_wake_configured = false;
 
+// Discovery asks the SignalK server, so it waits for the stream, and it is
+// only worth asking while the layout wants the wake word. Called on a
+// connect and when a layout turns the wake word on.
+void discover_wake() {
+  if (s_sk_connected && !s_wake_configured && jlp::voice().wake_wanted()) {
+    jlp::wake_discover_start(s_wyoming_sat);
+  }
+}
+
 void sk_stream_up() {
   s_sk_connected = true;
   jlp::overlay().set_sk("ok");
@@ -97,9 +106,8 @@ void sk_stream_up() {
     }
     jlp::layout_fetch_async_apply();
   }
-  // Waits for the SignalK connection because boot has no route yet. An
-  // explicit cockpit.wake_host wins over whatever the server advertises.
-  if (!s_wake_configured) jlp::wake_discover_start(s_wyoming_sat);
+  // An explicit cockpit.wake_host wins over whatever the server advertises.
+  discover_wake();
 }
 
 void sk_stream_down() {
@@ -232,7 +240,8 @@ esp_err_t panel_up(void*) {
   // mic (push-to-talk via the voice widget or the wake word). Wake runs
   // on-device (esp-sr WakeNet "Hi ESP" from the model partition) unless
   // cockpit.wake_host names a signalk-openwakeword server, in which case
-  // the mic streams there and any custom-trained word works.
+  // the mic streams there and any custom-trained word works. It runs only
+  // when the layout asks for it (`voice`, see jlp::VoiceControl).
   espos_voice::WyomingSatelliteConfig wy_cfg;
   // Set explicitly: espos_voice defaults to a generic "espos", and this is
   // the name the orchestrator and Home Assistant show for the device.
@@ -288,6 +297,7 @@ esp_err_t panel_up(void*) {
     jlp::store_init();
     jlp::chime().init(&audio);
     jlp::voice().init(&wyoming_sat, &audio);
+    jlp::voice().set_on_wake_wanted(discover_wake);
     std::string stored;
     jlp::ApplyResult r{};
     if (jlp::store_read(&stored)) {
@@ -411,8 +421,8 @@ extern "C" void app_main(void) {
                                           sizeof(kPlayerTxt) / sizeof(kPlayerTxt[0]));
   if (merr != ESP_OK) ESP_LOGW(TAG, "_signalk-player._tcp not advertised: %s", esp_err_to_name(merr));
   // Network is up (lwIP initialised by espOS): safe to open the satellite's
-  // TCP listener and the wake pipeline.
-  s_wyoming_sat->start();
+  // TCP listener and the wake pipeline, if the layout wants them.
+  jlp::voice().set_network_ready();
 
   ESP_LOGI(TAG, "boot: iram=%u iram_big=%u psram=%lu", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),

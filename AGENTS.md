@@ -234,7 +234,7 @@ designer refuses to push widget kinds the device doesn't advertise.
 | `esp_timer` 1 ms  | no            | `lv_tick_inc(1)` only — lock-free |
 | `espos_skws` task | no            | espOS SignalK stream; subscription callbacks run here and `ui::post` their work |
 | esp_event loop    | no            | `ESPOS_EVENT` handlers (network up/down, token approved, stream connected/disconnected) `ui::post` their work |
-| `jlp_*` / `wake_discover` | no    | Short-lived workers for the blocking espOS REST calls (zone/value seed, layout fetch, drop-here, wake discovery) |
+| `jlp_*` / `wake_discover` | no    | Short-lived workers for the blocking espOS REST calls (zone/value seed, layout fetch, drop-here, wake discovery), and `jlp_voice`, which starts and stops the satellite when a layout changes `voice` (`stop()` blocks while its tasks exit) |
 | `audio` task      | no            | Drains the chime clip queue; blocking I2S write to the ES8311. `WaveshareAudio::play_pcm` (called from the UI task) copies + enqueues, never blocks |
 | `wyoming_*` tasks | no            | Voice satellite (`espos_voice`): TCP server, mic streaming, wake feed/fetch (esp-sr AFE) |
 | `twai_rx` / candump | no          | N2K receive + per-client fan-out to the candump TCP server |

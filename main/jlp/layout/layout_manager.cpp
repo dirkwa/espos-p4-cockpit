@@ -1,10 +1,12 @@
 #include "layout_manager.h"
 
 #include <ArduinoJson.h>
+#include <cstring>
 #include "cockpit_hal/ui.h"
 #include "esp_log.h"
 
 #include "../alert_overlay.h"
+#include "../audio/voice_control.h"
 #include "../idle_dimmer.h"
 #include "../mic_overlay.h"
 #include "../settings_overlay.h"
@@ -15,6 +17,24 @@
 static const char* TAG = "jlp.layout";
 
 namespace jlp {
+
+namespace {
+
+// A talk button or a mic switch: the widgets that only make sense with the
+// satellite listening.
+bool layout_uses_mic(JsonObjectConst doc) {
+  for (JsonObjectConst screen : doc["screens"].as<JsonArrayConst>()) {
+    for (JsonObjectConst w : screen["widgets"].as<JsonArrayConst>()) {
+      const char* t = w["type"] | "";
+      if (!strcmp(t, "voice") || !strcmp(t, "mic") || !strcmp(t, "mute_mic")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+}  // namespace
 
 void LayoutManager::init(lv_obj_t* parent) {
   player_.init(parent, [this](JsonObjectConst doc, bool theme_rebuild) {
@@ -54,6 +74,15 @@ void LayoutManager::configure_chrome(JsonObjectConst doc, bool theme_rebuild) {
   // A theme rebuild happens at sunrise and sunset, often with nobody at
   // the panel: re-arming would wake a dimmed screen.
   if (!theme_rebuild) idle_dimmer().configure(idle_timeout_sec, idle_dim_pct);
+
+  // The satellite (and with it the mic and the wake word) runs only where
+  // the layout asks for it. A layout that does not say gets it when it has a
+  // widget that needs it, so layouts from before the setting keep their talk
+  // button working and the rest stop listening.
+  JsonObjectConst v = doc["voice"];
+  const bool voice_on = v["enabled"].is<bool>() ? v["enabled"].as<bool>() : layout_uses_mic(doc);
+  const bool wake_on = v["wake"].is<bool>() ? v["wake"].as<bool>() : true;
+  voice().set_mode(voice_on, wake_on);
 }
 
 ApplyResult LayoutManager::apply(const std::string& json, ApplySource src) {

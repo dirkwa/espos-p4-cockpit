@@ -4,6 +4,8 @@
 #include "espos_voice/wyoming_satellite.h"
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "jlp/layout/store.h"
 
@@ -40,6 +42,67 @@ void VoiceControl::init(espos_voice::WyomingSatellite* sat,
   ESP_LOGI(kTag, "restored audio: speaker=%s mic=%s volume=%u",
            speaker_muted_.load() ? "muted" : "on",
            mic_muted_.load() ? "muted" : "on", (unsigned)volume_.load());
+}
+
+void VoiceControl::set_mode(bool enabled, bool wake) {
+  const bool wake_was_wanted = wake_wanted();
+  const bool enabled_changed = want_enabled_.exchange(enabled) != enabled;
+  const bool wake_changed = want_wake_.exchange(wake) != wake;
+  // dirty_ still set: a worker could not be created last time.
+  if (enabled_changed || wake_changed || dirty_.load()) kick();
+  if (!wake_was_wanted && wake_wanted() && on_wake_wanted_) on_wake_wanted_();
+}
+
+void VoiceControl::set_network_ready() {
+  net_ready_.store(true);
+  kick();
+}
+
+void VoiceControl::kick() {
+  dirty_.store(true);
+  bool idle = false;
+  if (!worker_running_.compare_exchange_strong(idle, true)) return;  // it loops
+  // The stack the satellite's start() had on the main task: bringing WakeNet
+  // up runs esp-sr's AFE setup on the caller's stack.
+  if (xTaskCreate(worker, "jlp_voice", 8192, this, 3, nullptr) != pdPASS) {
+    worker_running_.store(false);
+    ESP_LOGE(kTag, "no task to switch voice; the next layout applied retries");
+  }
+}
+
+void VoiceControl::worker(void* arg) {
+  auto* self = static_cast<VoiceControl*>(arg);
+  for (;;) {
+    while (self->dirty_.exchange(false)) self->reconcile();
+    self->worker_running_.store(false);
+    // A kick between the last exchange and the store above saw a running
+    // worker and left the change to it.
+    bool idle = false;
+    if (!self->dirty_.load() ||
+        !self->worker_running_.compare_exchange_strong(idle, true)) {
+      break;
+    }
+  }
+  vTaskDelete(nullptr);
+}
+
+void VoiceControl::reconcile() {
+  if (!sat_) return;
+  if (!want_enabled_.load()) {
+    if (sat_->running()) {
+      ESP_LOGI(kTag, "voice off");
+      sat_->stop();
+    }
+    return;
+  }
+  // Before start() this is only recorded, so a panel that should not listen
+  // never loads WakeNet.
+  const bool wake = want_wake_.load();
+  sat_->set_wake_enabled(wake);
+  if (net_ready_.load() && !sat_->running()) {
+    ESP_LOGI(kTag, "voice on, wake word %s", wake ? "on" : "off");
+    sat_->start();
+  }
 }
 
 bool VoiceControl::available() const {

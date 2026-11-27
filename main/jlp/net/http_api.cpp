@@ -877,8 +877,13 @@ esp_err_t hello_get(httpd_req_t* req) {
       w["peak"] = g_wyoming->wake_peak();
     }
   } else {
-    resp["voice"] = "unavailable";
+    resp["voice"] = g_wyoming && !voice().enabled() ? "off" : "unavailable";
   }
+  // What the layout's `voice` object came to, defaults included. Its
+  // presence tells a designer the panel takes the object.
+  JsonObject vc = resp["voice_config"].to<JsonObject>();
+  vc["enabled"] = voice().enabled();
+  vc["wake"] = voice().wake();
   std::string out;
   serializeJson(resp, out);
   httpd_resp_sendstr(req, out.c_str());
