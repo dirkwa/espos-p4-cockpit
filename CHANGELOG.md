@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.9.1...v1.10.0) (2026-11-28)
+
+
+### Added
+
+* **voice:** run voice only where the layout asks ([#243](https://github.com/dirkwa/espos-p4-cockpit/issues/243)) ([98ee2b4](https://github.com/dirkwa/espos-p4-cockpit/commit/98ee2b4aa84703e0f607394f3effeeb9b4ba453a))
+
+
+### Fixed
+
+* bump espOS to v0.33.0 ([#245](https://github.com/dirkwa/espos-p4-cockpit/issues/245)) ([16fd24e](https://github.com/dirkwa/espos-p4-cockpit/commit/16fd24e94fa2fc93b535ae6f371b771f99cc7003))
+
 ## [1.9.1](https://github.com/dirkwa/espos-p4-cockpit/compare/v1.9.0...v1.9.1) (2026-11-27)
 
 
