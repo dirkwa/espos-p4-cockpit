@@ -45,13 +45,14 @@ void VoiceControl::init(espos_voice::WyomingSatellite* sat,
 }
 
 void VoiceControl::set_mode(bool enabled, bool wake) {
-  const bool wake_was_wanted = wake_wanted();
-  const bool enabled_changed = want_enabled_.exchange(enabled) != enabled;
-  const bool wake_changed = want_wake_.exchange(wake) != wake;
+  const uint8_t mode = (enabled ? kModeEnabled : 0) | (wake ? kModeWake : 0);
+  const uint8_t was = want_mode_.exchange(mode);
   // dirty_ still set: a worker could not be created last time. gave_up_: the
   // retries ran out, and a layout applied again is the next chance.
-  if (enabled_changed || wake_changed || dirty_.load() || gave_up_.load()) kick();
-  if (!wake_was_wanted && wake_wanted() && on_wake_wanted_) on_wake_wanted_();
+  if (was != mode || dirty_.load() || gave_up_.load()) kick();
+  if (!is_wake_wanted(was) && is_wake_wanted(mode) && on_wake_wanted_) {
+    on_wake_wanted_();
+  }
 }
 
 void VoiceControl::set_network_ready() {
@@ -114,7 +115,9 @@ void VoiceControl::worker(void* arg) {
 
 bool VoiceControl::reconcile() {
   if (!sat_) return true;
-  if (!want_enabled_.load()) {
+  // One load per pass: see want_mode_.
+  const uint8_t mode = want_mode_.load();
+  if (!(mode & kModeEnabled)) {
     if (sat_->running()) {
       ESP_LOGI(kTag, "voice off");
       sat_->stop();
@@ -123,7 +126,7 @@ bool VoiceControl::reconcile() {
   }
   // Before start() this is only recorded, so a panel that should not listen
   // never loads WakeNet.
-  const bool wake = want_wake_.load();
+  const bool wake = (mode & kModeWake) != 0;
   bool done = sat_->set_wake_enabled(wake);
   // Not recorded: starting now would bring up the satellite's previous
   // choice, WakeNet included.
