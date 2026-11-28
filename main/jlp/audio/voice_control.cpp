@@ -4,6 +4,8 @@
 #include "espos_voice/wyoming_satellite.h"
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "jlp/layout/store.h"
 
@@ -40,6 +42,103 @@ void VoiceControl::init(espos_voice::WyomingSatellite* sat,
   ESP_LOGI(kTag, "restored audio: speaker=%s mic=%s volume=%u",
            speaker_muted_.load() ? "muted" : "on",
            mic_muted_.load() ? "muted" : "on", (unsigned)volume_.load());
+}
+
+void VoiceControl::set_mode(bool enabled, bool wake) {
+  const uint8_t mode = (enabled ? kModeEnabled : 0) | (wake ? kModeWake : 0);
+  const uint8_t was = want_mode_.exchange(mode);
+  // dirty_ still set: a worker could not be created last time. gave_up_: the
+  // retries ran out, and a layout applied again is the next chance.
+  if (was != mode || dirty_.load() || gave_up_.load()) kick();
+  if (!is_wake_wanted(was) && is_wake_wanted(mode) && on_wake_wanted_) {
+    on_wake_wanted_();
+  }
+}
+
+void VoiceControl::set_network_ready() {
+  net_ready_.store(true);
+  kick();
+}
+
+void VoiceControl::kick() {
+  dirty_.store(true);
+  bool idle = false;
+  if (!worker_running_.compare_exchange_strong(idle, true)) return;  // it loops
+  // The stack the satellite's start() had on the main task: bringing WakeNet
+  // up runs esp-sr's AFE setup on the caller's stack.
+  if (xTaskCreate(worker, "jlp_voice", 8192, this, 3, nullptr) != pdPASS) {
+    worker_running_.store(false);
+    ESP_LOGE(kTag, "no task to switch voice; the next layout applied retries");
+  }
+}
+
+void VoiceControl::worker(void* arg) {
+  auto* self = static_cast<VoiceControl*>(arg);
+  // A wake word that did not come up, or a switch the satellite could not
+  // finish in time, is retried by espOS on the next call. A few calls,
+  // further apart: a word that never loads is not worth retrying for ever,
+  // and push-to-talk works meanwhile.
+  constexpr int kRetries = 3;
+  int failures = 0;
+  for (;;) {
+    while (self->dirty_.exchange(false)) {
+      if (self->reconcile()) {
+        failures = 0;
+        self->gave_up_.store(false);
+        continue;
+      }
+      if (++failures > kRetries) {
+        ESP_LOGW(kTag, "voice switch still incomplete; giving up until the next layout");
+        failures = 0;
+        self->gave_up_.store(true);
+        continue;
+      }
+      const int wait_ms = 15000 << (failures - 1);
+      ESP_LOGW(kTag, "voice switch incomplete; trying again in %d s", wait_ms / 1000);
+      // A layout pushed meanwhile ends the wait: it is applied at once.
+      for (int t = 0; t < wait_ms && !self->dirty_.load(); t += 500) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+      }
+      self->dirty_.store(true);
+    }
+    self->worker_running_.store(false);
+    // A kick between the last exchange and the store above saw a running
+    // worker and left the change to it.
+    bool idle = false;
+    if (!self->dirty_.load() ||
+        !self->worker_running_.compare_exchange_strong(idle, true)) {
+      break;
+    }
+  }
+  vTaskDelete(nullptr);
+}
+
+bool VoiceControl::reconcile() {
+  if (!sat_) return true;
+  // One load per pass: see want_mode_.
+  const uint8_t mode = want_mode_.load();
+  if (!(mode & kModeEnabled)) {
+    if (sat_->running()) {
+      ESP_LOGI(kTag, "voice off");
+      sat_->stop();
+    }
+    return true;
+  }
+  // Before start() this is only recorded, so a panel that should not listen
+  // never loads WakeNet.
+  const bool wake = (mode & kModeWake) != 0;
+  bool done = sat_->set_wake_enabled(wake);
+  // Not recorded: starting now would bring up the satellite's previous
+  // choice, WakeNet included.
+  if (!done && !sat_->running()) return false;
+  if (net_ready_.load() && !sat_->running()) {
+    ESP_LOGI(kTag, "voice on, wake word %s", wake ? "on" : "off");
+    sat_->start();
+  }
+  // start() does not say whether the wake word came up; wake_enabled() does,
+  // for a network wake task as well as for the on-device engine.
+  if (sat_->running() && wake && !sat_->wake_enabled()) done = false;
+  return done;
 }
 
 bool VoiceControl::available() const {

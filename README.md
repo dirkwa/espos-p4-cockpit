@@ -91,7 +91,7 @@ If a pushed or fetched layout fails parse/validate/build, the previous layout st
 | 80   | *      | `/`, `/api/v1/…` | espOS web UI + REST API (config, WiFi, SignalK, OTA, logs, core dump) |
 | 80   | GET    | `/api/v1/n2k`   | CAN bus diagnostics: `running`, `ever_received`, `idle_s`, frames, dropped, errors, bus_off, decoded last-error flags |
 | 2599 | TCP    | (candump)       | Stream raw N2K frames in candump format       |
-| 10700| TCP    | (wyoming)       | Voice satellite: the orchestrator dials in    |
+| 10700| TCP    | (wyoming)       | Voice satellite: the orchestrator dials in (only while the layout has voice on) |
 
 The full contract — request/response shapes, schema, widget fields, error codes — is in [JLP-PROTOCOL.md](JLP-PROTOCOL.md).
 
@@ -256,6 +256,13 @@ Releases up to 1.2.0 name their images without the `-<board>` segment, and
 only releases after this change carry the ELF.
 
 ## Wake word
+
+**Voice is set per layout.** The layout's `voice` object switches the
+satellite on, and the wake word with it or without
+([JLP-PROTOCOL.md](JLP-PROTOCOL.md#top-level)); the designer has it under
+*Voice control*. A layout that does not set it gets voice when it has a
+`voice` or `mic` widget. The built-in default layout has neither, so a
+freshly flashed panel does not listen.
 
 The hands-free wake word is now **runtime configuration**, not a build
 variant. `cockpit.wake_host` empty runs on-device esp-sr WakeNet ("Hi ESP",

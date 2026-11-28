@@ -8,12 +8,14 @@
 #include <vector>
 
 #include "ArduinoJson.h"
+#include "cockpit_hal/ui.h"
 #include "esp_log.h"
 #include "espos_sk.h"
 #include "espos_sk_http.h"
 #include "espos_voice/wyoming_satellite.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "jlp/audio/voice_control.h"
 
 namespace jlp {
 namespace {
@@ -27,6 +29,9 @@ espos_voice::WyomingSatellite* s_sat = nullptr;
 // s_discovered_for is only touched by the UI timer.
 std::string s_discovered_for;
 std::atomic<bool> s_running{false};
+// Set by a task that gave up because the layout no longer wants the wake
+// word, so the next start asks the same server again.
+std::atomic<bool> s_abandoned{false};
 
 // The document is ~1.7 KB today and grows by ~210 bytes per wake model the
 // service advertises -- and adding custom models is exactly what this feature
@@ -101,6 +106,20 @@ void discover_task(void*) {
     if (attempt) {
       vTaskDelay(pdMS_TO_TICKS(attempt < kFastAttempts ? kFastDelayMs
                                                        : kSlowDelayMs));
+    }
+    // A panel without the wake word has no use for the service, and the
+    // query is a request a minute against the server for nothing.
+    if (!voice().wake_wanted()) {
+      ESP_LOGI(kTag, "wake word off — stopped looking for a wake service");
+      s_abandoned.store(true);
+      s_running.store(false);
+      // A layout that turned it back on meanwhile found this task running
+      // and left the search to it.
+      if (voice().wake_wanted()) {
+        cockpit_hal::ui::post([] { wake_discover_start(s_sat); });
+      }
+      vTaskDelete(nullptr);
+      return;
     }
 
     // The server the request went to is the wake host: the plugin runs on
@@ -218,7 +237,8 @@ void wake_discover_start(espos_voice::WyomingSatellite* sat) {
   espos_sk_server_t srv;
   if (espos_sk_get_server(&srv) != ESP_OK) return;
   const std::string key = std::string(srv.host) + ":" + std::to_string(srv.port);
-  if (key == s_discovered_for) return;
+  if (key == s_discovered_for && !s_abandoned.load()) return;
+  s_abandoned.store(false);
   s_discovered_for = key;
   s_sat = sat;
   s_running.store(true);

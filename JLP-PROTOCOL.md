@@ -77,6 +77,8 @@ Field meanings:
 | `widgets`            | Dictionary of supported widget kinds. The `fields` list is the set of JSON keys the device recognises for that kind — clients MUST NOT emit unknown keys for a kind.                                                                              |
 | `active_layout_name` | The `name` of the currently-rendered layout, or `""` if none.           |
 | `layout_source`      | Where the active layout came from: `"littlefs"` \| `"default"` \| `"applicationData"` \| `"post"`. |
+| `voice`              | The voice satellite: `"listening"` (waiting for an orchestrator), `"connected"`, `"off"` (the layout has voice off) or `"unavailable"`. |
+| `voice_config`       | What the active layout's [`voice`](#top-level) object came to, defaults included: `{"enabled": bool, "wake": bool}`. Absent on firmware without the object; a client offers the setting only when it is present. |
 
 Clients SHOULD `GET /hello` before pushing and refuse to emit widgets/fields the device doesn't advertise.
 
@@ -193,6 +195,7 @@ Liveness probe. Returns 200 `{"ok":true}` if the device is up. No body fields ar
 | `tab_strip`       | string  | no       | `"fixed"` | Where the multi-screen tab strip sits. `"fixed"`: below the pages, which share the height with it. `"overlay-bottom"`: the pages take the full height; the strip is hidden and shows above the bottom of the page after a swipe up from the bottom edge or a page swipe, until a tab is tapped or for 5 s. A device draws a value it does not know as `"fixed"`; `/hello.display.tab_strip` lists the values it supports. Ignored when there is only one screen. |
 | `display`         | object  | no       | —       | Backlight power-save. `display.idle_timeout_sec` (uint): seconds of no touch before the backlight dims; `0` or omitted disables the dimmer. `display.idle_dim_pct` (uint 0-100, default 0 = fully off): brightness while idle. While dimmed the device covers the layout with a "TAP TO WAKE" overlay so the first wake-tap can't accidentally hit a widget underneath. **Day/night gating**: the dimmer only engages at night, driven by SignalK `environment.mode` (`"day"`/`"night"`, subscribed automatically) as published by the `signalk-espos-manager` plugin, which computes it offline from `navigation.position` with `@openwaters/almanac` (`day` from sunrise to sunset); `signalk-derived-data`'s Sun calculation publishes the same path and works too. Fail-safe to always-on until SK has delivered a value (so a server without either plugin, or without a position, just leaves the panel bright). Wake sources: any touch, any incoming notification (escalation only), a fresh layout push. All three re-arm the idle timer. Capability advertised by `/hello.display.idle_timeout = true` + `idle_dim_pct = true`. |
 | `theme`           | object  | no       | —       | Panel colors, see [Themes](#themes). |
+| `voice`           | object  | no       | —       | The voice satellite. `voice.enabled` (bool): run it, so an orchestrator can connect, speak through the panel and take push-to-talk. `voice.wake` (bool, default `true`): listen for the wake word as well; `false` leaves push-to-talk only. With `enabled: false`, nothing listens: the satellite's port (10700) is closed, WakeNet is not loaded and the panel does not ask the server for a wake service. With `enabled` omitted, the panel decides from the widgets: voice runs when the layout has a `voice` or `mic` widget, and not otherwise; the built-in default layout has neither. Alert chimes do not depend on it. Changing it on a push takes effect without a restart. Capability advertised by `/hello.voice_config`. |
 | `screens`         | array   | yes      | —       | At least one screen.                                 |
 
 On a layout with more than one screen, a horizontal swipe on the page shows the next screen (swipe left) or the previous one (swipe right), in tab order; past the last screen it wraps to the first, and back. A swipe that starts on a slider, an arc, a stream or a `button` without `hold_ms`, or that scrolls a list, stays with that widget, and the widget under the finger gets no click. Such a button sends `press_value` the moment it is touched, so a swipe starting on it would end a real press in a page change; it keeps the press until the finger lifts instead. A `button` with `hold_ms` sends nothing if a swipe takes the press before the hold ends.
@@ -376,6 +379,7 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
 - What happens while held is the satellite's job (espOS `espos_voice`), not the widget's: the satellite streams the panel mic to the orchestrator (signalk-wyoming / Home Assistant), which transcribes it and publishes the text to `voice.command`. The panel never publishes.
 - Caption by satellite state: the configured `label` (default `TALK`) when idle, **`LISTENING`** (green) once a pipeline is active, `…` (grey) when no orchestrator is connected.
 - Requires an orchestrator to have armed the satellite (`run-satellite`); when the satellite is output-only (`pause-satellite`) a press is a no-op.
+- Requires voice on in the layout. A layout that leaves `voice.enabled` out gets it because of this widget; one that sets it to `false` shows `…` here.
 - Extra fields: `label` (idle caption, default `TALK`), `bg_color`, `fg_color`.
 
 #### `speaker`
@@ -387,6 +391,7 @@ Displayed value = `(raw × scale) + offset`, formatted to `decimals`, then `unit
 #### `mic`
 
 - Panel-local mic switch / privacy control. **ON = mic live, OFF = the mic never streams** (push-to-talk and wake-word both suppressed). Defaults to ON. No `bind`, no SignalK.
+- Like `voice`, it turns voice on in a layout that leaves `voice.enabled` out. To switch voice off for good rather than mute it, set `voice.enabled` to `false`.
 - Extra fields: `label` (default `MIC`), `bg_color`, `fg_color`.
 - `mute_mic` is accepted as a legacy alias. New layouts should use `mic`.
 

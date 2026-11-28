@@ -26,6 +26,21 @@ class VoiceControl {
 
   // --- Voice (Wyoming satellite) ---
 
+  // Whether the satellite runs, and whether it listens for the wake word: the
+  // layout's `voice` object, set on the UI task by the layout manager. The
+  // satellite follows on a short-lived worker, because stopping it blocks
+  // for seconds while its tasks exit. Nothing runs until a layout asks.
+  void set_mode(bool enabled, bool wake);
+  // The satellite's listener needs lwIP, so it starts no earlier than this.
+  void set_network_ready();
+  bool enabled() const { return (want_mode_.load() & kModeEnabled) != 0; }
+  // The layout's wake setting, also while voice is off.
+  bool wake() const { return (want_mode_.load() & kModeWake) != 0; }
+  bool wake_wanted() const { return is_wake_wanted(want_mode_.load()); }
+  // Called on the UI task when a layout turns the wake word on, so wake
+  // discovery can start then instead of at the next SignalK connect.
+  void set_on_wake_wanted(void (*fn)()) { on_wake_wanted_ = fn; }
+
   // True if a satellite is wired and an orchestrator is connected.
   bool available() const;
 
@@ -84,6 +99,28 @@ class VoiceControl {
   std::atomic<uint32_t> speaker_mutes_{0};
   std::atomic<bool> mic_muted_{false};
   std::atomic<uint8_t> volume_{50};  // matches WaveshareAudio's default
+
+  void kick();
+  static void worker(void* arg);
+  bool reconcile();  // false: not in the state asked for; worth a retry
+  // The layout's voice object as one value, so the worker never reads the
+  // new `enabled` with the old `wake`: going from off-with-wake to
+  // push-to-talk would otherwise pass through on-with-wake and start the wake
+  // word for a moment. Written on the UI task (set_mode), read by the worker
+  // and by /hello.
+  static constexpr uint8_t kModeEnabled = 1;
+  static constexpr uint8_t kModeWake = 2;
+  static constexpr bool is_wake_wanted(uint8_t mode) {
+    return (mode & (kModeEnabled | kModeWake)) == (kModeEnabled | kModeWake);
+  }
+  std::atomic<uint8_t> want_mode_{kModeWake};  // off, wake word on
+  // Written on the main task (set_network_ready), read by the worker.
+  std::atomic<bool> net_ready_{false};
+  // A change the worker has not applied yet, and whether a worker runs.
+  std::atomic<bool> dirty_{false};
+  std::atomic<bool> worker_running_{false};
+  std::atomic<bool> gave_up_{false};  // the worker's retries ran out
+  void (*on_wake_wanted_)() = nullptr;  // UI task only
 };
 
 VoiceControl& voice();
